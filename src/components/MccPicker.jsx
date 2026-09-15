@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { MCC_GROUPS, PRESETS, codesForGroups } from '../data/mccs.js'
+import { useI18n } from '../i18n/I18n.jsx'
 
 export default function MccPicker({ value, onChange }) {
+  const { tx } = useI18n()
   const [q, setQ] = useState('')
   const selected = new Set(value)
 
@@ -43,22 +45,18 @@ export default function MccPicker({ value, onChange }) {
             {p.label}
           </button>
         ))}
-        <button type="button" className="btn ghost" onClick={() => onChange([])}>
-          Clear
-        </button>
+        <button type="button" className="btn ghost" onClick={() => onChange([])}>{tx("Clear")}</button>
       </div>
       <label className="search" style={{ marginBottom: 12, display: 'flex' }}>
-        <span style={{ color: 'var(--muted)' }}>Find MCC</span>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="5411 or grocery" />
+        <span style={{ color: 'var(--muted)' }}>{tx("Find MCC")}</span>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tx("5411 or grocery")} />
       </label>
-      <p style={{ color: 'var(--muted)', marginTop: 0 }}>{selected.size} codes allowed</p>
+      <p style={{ color: 'var(--muted)', marginTop: 0 }}>{selected.size}{' '}{tx("codes allowed")}</p>
       {groups.map((g) => (
         <div className="group" key={g.id}>
           <h3>
             <span>{g.label}</span>
-            <button type="button" className="btn ghost" onClick={() => toggleGroup(g)}>
-              Toggle group
-            </button>
+            <button type="button" className="btn ghost" onClick={() => toggleGroup(g)}>{tx("Toggle group")}</button>
           </h3>
           <div className="mcc-grid">
             {g.codes.map(([code, name]) => (

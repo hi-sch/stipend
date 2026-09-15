@@ -1,7 +1,20 @@
 import { useMemo, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ShoppingBag01Icon, Home01Icon, HeartPulseIcon } from '@hugeicons/core-free-icons'
+import {
+  BabyBottleIcon,
+  Book02Icon,
+  Bus01Icon,
+  FlashIcon,
+  HeartPulseIcon,
+  Home01Icon,
+  Plant01Icon,
+  ShoppingBag01Icon,
+  Sofa01Icon,
+  TShirtIcon,
+  Wallet01Icon,
+} from '@hugeicons/core-free-icons'
 import PieEnvelopes from '../components/PieEnvelopes.jsx'
+import CashLimit from '../components/CashLimit.jsx'
 import CardFace from '../components/CardFace.jsx'
 import SpendChart from '../components/SpendChart.jsx'
 import TransactionTable, { TableTools } from '../components/TransactionTable.jsx'
@@ -13,15 +26,16 @@ import { getFormatLocale } from '../lib/format.js'
 
 export default function Dashboard() {
   const { t, lang } = useI18n()
-  const { envelopes, transactions, cardholder } = useStore()
+  const { envelopes, transactions, cardholder, cashUsage } = useStore()
   const [q, setQ] = useState('')
   const [range, setRange] = useState('week')
 
-  const total = envelopes.reduce((s, e) => s + e.balanceCents, 0)
-  const spent = envelopes.reduce((s, e) => s + e.spentCents, 0)
-  const food = envelopes.find((e) => e.connectionId === 'de-jobcenter')
-  const housing = envelopes.find((e) => e.connectionId === 'de-wohngeld')
-  const health = envelopes.find((e) => e.connectionId === 'de-gkv')
+  const total = envelopes.reduce((s, e) => s + Math.max(0, e.balanceCents), 0)
+  // The two tiles show the envelopes with the most money left.
+  const ranked = useMemo(() => [...envelopes].sort((a, b) => b.balanceCents - a.balanceCents), [envelopes])
+  const [primary, secondary] = ranked
+  const recent = useMemo(() => dailySpend(transactions, 14), [transactions])
+  const month = useMemo(() => monthSpend(transactions), [transactions])
 
   const names = Object.fromEntries(envelopes.map((e) => [e.id, e.connectionName]))
 
@@ -38,60 +52,30 @@ export default function Dashboard() {
     <div className="dash">
       <p className="synth">{t('synth.amounts')}</p>
       <section className="kpis">
-        <article className="kpi lilac">
-          <div className="kpi-head">
-            <div className="kpi-ico">
-              <HugeiconsIcon icon={ShoppingBag01Icon} size={18} color="currentColor" />
-            </div>
-          </div>
-          <h3>Jobcenter Bürgergeld</h3>
-          <div className="meta">{t('dash.livingCosts', { count: food?.mccs.length ?? 0 })}</div>
-          <div className="amount">
-            {eur(food?.balanceCents ?? 0)}
-            <span className="delta up">{t('dash.spendable')}</span>
-          </div>
-          <Spark color="#5b4fe0" />
-          <div className="kpi-foot">
-            <span>{t('dash.spent', { amount: eur(food?.spentCents ?? 0) })}</span>
-            <span>{t('dash.foodHousehold')}</span>
-          </div>
-        </article>
-        <article className="kpi peach">
-          <div className="kpi-head">
-            <div className="kpi-ico">
-              <HugeiconsIcon icon={Home01Icon} size={18} color="currentColor" />
-            </div>
-          </div>
-          <h3>Wohngeldstelle</h3>
-          <div className="meta">{t('dash.rentHousing', { count: housing?.mccs.length ?? 0 })}</div>
-          <div className="amount">
-            {eur(housing?.balanceCents ?? 0)}
-            <span className="delta up">{t('dash.earmarked')}</span>
-          </div>
-          <Spark color="#c9894a" />
-          <div className="kpi-foot">
-            <span>{t('dash.rentPending')}</span>
-            <span>MCC 6513</span>
-          </div>
-        </article>
+        <EnvelopeTile envelope={primary} tone="lilac" color="#5b4fe0" values={recent.byEnvelope[primary?.id]} spent={month.byEnvelope[primary?.id]} badge={t('dash.spendable')} />
+        <EnvelopeTile envelope={secondary} tone="peach" color="#c9894a" values={recent.byEnvelope[secondary?.id]} spent={month.byEnvelope[secondary?.id]} badge={t('dash.earmarked')} />
         <article className="kpi dark">
           <div className="kpi-head">
             <div className="kpi-ico">
-              <HugeiconsIcon icon={HeartPulseIcon} size={18} color="currentColor" />
+              <HugeiconsIcon icon={Wallet01Icon} size={18} color="currentColor" />
             </div>
           </div>
           <h3>{t('dash.totalAvailable')}</h3>
-          <div className="meta">
-            {t('dash.envelopesHealth', { count: envelopes.length, amount: eur(health?.balanceCents ?? 0) })}
-          </div>
+          <div className="meta">{t('dash.totalMeta', { count: envelopes.length, amount: eur(month.total) })}</div>
           <div className="amount">{eur(total)}</div>
-          <Spark color="#9aa0a8" light />
+          <Spark color="#9aa0a8" values={recent.total} light />
           <div className="kpi-foot">
-            <span>{t('dash.spentPeriod', { amount: eur(spent) })}</span>
-            <span>{cardholder.card.lastFour}</span>
+            <span>{t('dash.last14', { amount: eur(recent.total.reduce((a, b) => a + b, 0)) })}</span>
+            <span>{cardholder.card?.lastFour || '····'}</span>
           </div>
         </article>
       </section>
+
+      {cashUsage && (
+        <section className="card" aria-label={t('cash.limitTitle')}>
+          <CashLimit usage={cashUsage} />
+        </section>
+      )}
 
       <section className="grid-2 hero-pie">
         <div className="card">
@@ -105,7 +89,7 @@ export default function Dashboard() {
         </div>
         <div className="card">
           <h2>{t('dash.card')}</h2>
-          <CardFace card={cardholder.card} holder={`${cardholder.firstName} ${cardholder.lastName}`} />
+          <CardFace card={cardholder.card || {}} holder={`${cardholder.firstName} ${cardholder.lastName}`} />
         </div>
       </section>
 
@@ -171,22 +155,109 @@ export default function Dashboard() {
   )
 }
 
-function Spark({ color, light }) {
+const GROUP_ICONS = {
+  food: ShoppingBag01Icon,
+  housing: Home01Icon,
+  health: HeartPulseIcon,
+  transport: Bus01Icon,
+  education: Book02Icon,
+  childcare: BabyBottleIcon,
+  energy: FlashIcon,
+  clothing: TShirtIcon,
+  household: Sofa01Icon,
+  agri: Plant01Icon,
+}
+
+function dominantGroup(envelope) {
+  const counts = {}
+  for (const code of envelope?.mccs || []) counts[mccGroupId(code)] = (counts[mccGroupId(code)] || 0) + 1
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'other'
+}
+
+function EnvelopeTile({ envelope, tone, color, values, spent, badge }) {
+  const { t } = useI18n()
+  const group = dominantGroup(envelope)
   return (
-    <svg className="spark" width="88" height="28" viewBox="0 0 88 28" aria-hidden="true">
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        points="0,18 12,16 24,20 36,10 48,14 60,8 72,12 88,6"
-      />
-      {light ? null : <circle cx="88" cy="6" r="3" fill={color} />}
+    <article className={`kpi ${tone}`}>
+      <div className="kpi-head">
+        <div className="kpi-ico">
+          <HugeiconsIcon icon={GROUP_ICONS[group] || Wallet01Icon} size={18} color="currentColor" />
+        </div>
+      </div>
+      <h3>{envelope?.connectionName || t('dash.noEnvelope')}</h3>
+      <div className="meta">
+        {envelope ? t('dash.tileMeta', { count: (envelope.mccs || []).length, group: t(`mccGroup.${group}`) }) : '\u00a0'}
+      </div>
+      <div className="amount">
+        {eur(envelope?.balanceCents ?? 0)}
+        {envelope && <span className="delta up">{badge}</span>}
+      </div>
+      <Spark color={color} values={values} />
+      <div className="kpi-foot">
+        <span>{t('dash.spentMonth', { amount: eur(spent ?? 0) })}</span>
+        <span>{t('dash.namedEnvelope')}</span>
+      </div>
+    </article>
+  )
+}
+
+/** 14-day spend sparkline; flat when nothing was spent. */
+function Spark({ color, values = [], light }) {
+  const W = 88
+  const H = 28
+  const list = values.length ? values : new Array(14).fill(0)
+  const max = Math.max(0, ...list)
+  const points = list.map((v, i) => [
+    list.length === 1 ? W : (i / (list.length - 1)) * W,
+    max ? H - 3 - (v / max) * (H - 8) : H - 4,
+  ])
+  const [lx, ly] = points[points.length - 1]
+  return (
+    <svg className="spark" width={W} height={H} viewBox={`-3 0 ${W + 6} ${H}`} aria-hidden="true">
+      <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" points={points.map((p) => p.map((n) => n.toFixed(1)).join(',')).join(' ')} />
+      {light ? null : <circle cx={lx} cy={ly} r="3" fill={color} />}
     </svg>
   )
 }
 
+function counts(t) {
+  return !['DECLINED', 'VOIDED', 'EXPIRED'].includes(t.status) && t.kind !== 'RETURN'
+}
+
+function dailySpend(transactions, days) {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - (days - 1))
+  const byEnvelope = {}
+  const total = new Array(days).fill(0)
+  for (const t of transactions) {
+    if (!counts(t)) continue
+    const index = Math.floor((new Date(t.created) - start) / 86400000)
+    if (index < 0 || index >= days) continue
+    total[index] += t.amountCents
+    if (t.envelopeId) {
+      byEnvelope[t.envelopeId] = byEnvelope[t.envelopeId] || new Array(days).fill(0)
+      byEnvelope[t.envelopeId][index] += t.amountCents
+    }
+  }
+  return { byEnvelope, total }
+}
+
+function monthSpend(transactions) {
+  const now = new Date()
+  const byEnvelope = {}
+  let total = 0
+  for (const t of transactions) {
+    const d = new Date(t.created)
+    if (!counts(t) || d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth()) continue
+    total += t.amountCents
+    if (t.envelopeId) byEnvelope[t.envelopeId] = (byEnvelope[t.envelopeId] || 0) + t.amountCents
+  }
+  return { byEnvelope, total }
+}
+
 function inRange(t, start, end) {
-  return t.status !== 'DECLINED' && t.created >= start && t.created < end
+  return !['DECLINED', 'VOIDED', 'EXPIRED'].includes(t.status) && t.kind !== 'RETURN' && t.created >= start && t.created < end
 }
 
 function periodChart(transactions, envelopes, range) {
@@ -204,10 +275,9 @@ function periodChart(transactions, envelopes, range) {
     ),
   }))
 
-  const peak = Math.max(
-    1,
-    ...layers[0].values.map((_, i) => layers.reduce((s, l) => s + l.values[i], 0)),
-  )
+  const peak = layers[0]?.values?.length
+    ? Math.max(1, ...layers[0].values.map((_, i) => layers.reduce((s, l) => s + (l.values[i] || 0), 0)))
+    : 1
   return {
     kind: range,
     labels: buckets.map((b) => b.label),
@@ -279,7 +349,7 @@ function makeBuckets(range) {
 function topMerchants(transactions) {
   const map = new Map()
   transactions
-    .filter((t) => t.status !== 'DECLINED')
+    .filter((t) => !['DECLINED', 'VOIDED', 'EXPIRED'].includes(t.status) && t.kind !== 'RETURN')
     .forEach((t) => {
       const cur = map.get(t.merchant.descriptor) || { name: t.merchant.descriptor, amount: 0, mcc: t.merchant.mcc }
       cur.amount += t.amountCents
@@ -294,7 +364,7 @@ function topMerchants(transactions) {
 function mccHeat(transactions) {
   const sums = new Map()
   transactions.forEach((t) => {
-    if (t.status === 'DECLINED') return
+    if (['DECLINED', 'VOIDED', 'EXPIRED'].includes(t.status) || t.kind === 'RETURN') return
     const g = mccGroupId(t.merchant.mcc)
     sums.set(g, (sums.get(g) || 0) + t.amountCents)
   })

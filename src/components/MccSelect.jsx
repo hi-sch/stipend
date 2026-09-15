@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MCC_GROUPS, mccName } from '../data/mccs.js'
+import { useI18n } from '../i18n/I18n.jsx'
 
 const EXTRA = [
   ['5816', 'Digital goods (blocked demo)'],
@@ -12,6 +13,7 @@ export const MCC_OPTIONS = [
 ]
 
 export default function MccSelect({ id, value, onChange }) {
+  const { tx } = useI18n()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const wrap = useRef(null)
@@ -52,7 +54,7 @@ export default function MccSelect({ id, value, onChange }) {
             className="mcc-select-search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search MCC or name"
+            placeholder={tx("Search MCC or name")}
             autoFocus
           />
           {filtered.map((o) => (
@@ -72,7 +74,7 @@ export default function MccSelect({ id, value, onChange }) {
               <span>{o.name}</span>
             </button>
           ))}
-          {!filtered.length && <p className="empty">No matching MCC</p>}
+          {!filtered.length && <p className="empty">{tx("No matching MCC")}</p>}
         </div>
       )}
     </div>

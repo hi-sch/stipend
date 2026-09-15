@@ -22,17 +22,47 @@ export default function SpendChart({ chart }) {
 }
 
 function SparkArea({ chart }) {
+  const { t } = useI18n()
   const { labels, layers, tips } = chart
   const n = labels.length
   const totals = labels.map((_, i) => layers.reduce((s, l) => s + l.values[i], 0))
   const peak = Math.max(1, ...totals)
   const [hover, setHover] = useState(null)
   const slot = n <= 1 ? W : W / (n - 1)
+  const active = hover != null ? hover : null
+  const summary = labels
+    .map((label, i) => `${tips?.[i] || label}: ${eur(totals[i])}`)
+    .join('. ')
+
+  function move(delta) {
+    setHover((i) => {
+      const cur = i == null ? (delta > 0 ? -1 : n) : i
+      return Math.max(0, Math.min(n - 1, cur + delta))
+    })
+  }
 
   return (
     <div className="spend-spark">
       <div className="spend-plot">
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Spend over time">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
+          role="img"
+          tabIndex={0}
+          aria-label={`${t('dash.spendChartAria')}. ${summary}`}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+              e.preventDefault()
+              move(1)
+            }
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+              e.preventDefault()
+              move(-1)
+            }
+            if (e.key === 'Escape') setHover(null)
+          }}
+          onBlur={() => setHover(null)}
+        >
           <path
             d={linePath(totals, n, peak)}
             fill="none"
@@ -42,10 +72,10 @@ function SparkArea({ chart }) {
             strokeLinecap="square"
             vectorEffect="non-scaling-stroke"
           />
-          {hover != null && n > 1 && (
+          {active != null && n > 1 && (
             <line
-              x1={xAt(hover, n)}
-              x2={xAt(hover, n)}
+              x1={xAt(active, n)}
+              x2={xAt(active, n)}
               y1={PAD_Y}
               y2={H - PAD_Y}
               stroke="#6b717c"
@@ -64,30 +94,55 @@ function SparkArea({ chart }) {
               fill="transparent"
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(i)}
             />
           ))}
         </svg>
-        {hover != null && (
+        {active != null && (
           <div
             className="spend-tip"
+            role="status"
             style={{
-              left: `${n <= 1 ? 50 : (hover / (n - 1)) * 100}%`,
-              transform: hover === 0 ? 'translateX(0)' : hover === n - 1 ? 'translateX(-100%)' : 'translateX(-50%)',
+              left: `${n <= 1 ? 50 : (active / (n - 1)) * 100}%`,
+              transform: active === 0 ? 'translateX(0)' : active === n - 1 ? 'translateX(-100%)' : 'translateX(-50%)',
             }}
           >
-            <strong>{tips?.[hover] || labels[hover]}</strong>
-            <span>{eur(layers.reduce((s, l) => s + l.values[hover], 0))}</span>
+            <strong>{tips?.[active] || labels[active]}</strong>
+            <span>{eur(layers.reduce((s, l) => s + l.values[active], 0))}</span>
             {layers
-              .filter((l) => l.values[hover] > 0)
+              .filter((l) => l.values[active] > 0)
               .map((l) => (
                 <div key={l.id}>
                   <i style={{ background: l.color }} />
-                  {l.name} {eur(l.values[hover])}
+                  {l.name} {eur(l.values[active])}
                 </div>
               ))}
           </div>
         )}
       </div>
+      <table className="sr-only">
+        <caption>{t('dash.spendChartAria')}</caption>
+        <thead>
+          <tr>
+            <th>{t('incoming.when')}</th>
+            {layers.map((l) => (
+              <th key={l.id}>{l.name}</th>
+            ))}
+            <th>{t('table.amount')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {labels.map((label, i) => (
+            <tr key={label + i}>
+              <td>{tips?.[i] || label}</td>
+              {layers.map((l) => (
+                <td key={l.id}>{eur(l.values[i])}</td>
+              ))}
+              <td>{eur(totals[i])}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -131,22 +186,26 @@ function StackedBar({ chart }) {
 
   return (
     <div className="spend-hbar-wrap">
-      <div className="spend-hbar" role="img" aria-label="Spend by envelope">
+      <div className="spend-hbar" role="list" aria-label={t('dash.spendByEnvelope')}>
         {segs.map((layer, i) => (
-          <div
+          <button
             key={layer.id}
+            type="button"
             className={`spend-hbar-seg ${hover === i ? 'on' : ''}`}
             style={{
               width: `${(layer.cents / total) * 100}%`,
               background: layer.color,
             }}
+            aria-label={`${layer.name}: ${eur(layer.cents)}`}
             onMouseEnter={() => setHover(i)}
             onMouseLeave={() => setHover(null)}
+            onFocus={() => setHover(i)}
+            onBlur={() => setHover(null)}
           />
         ))}
       </div>
       {active && (
-        <div className="spend-tip spend-tip-bar">
+        <div className="spend-tip spend-tip-bar" role="status">
           <strong>{active.name}</strong>
           <span>{eur(active.cents)}</span>
         </div>

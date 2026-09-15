@@ -254,7 +254,7 @@ export const AGENCIES = [
     system: 'ISO 20022 · pain.001',
     purpose: 'GOVT',
     preset: 'farm',
-    mccs: ['0763', '0780', '5261', '5983', '5085', '5261', '5551'].filter(Boolean),
+    mccs: [...codesForGroups(['agri']), '5983'],
   },
 ]
 

@@ -32,6 +32,10 @@ dist-ssr
 *.sln
 *.sw?
 
+# Runtime data
+server/data/
+server/demo-state.json
+
 # Impeccable local
 .impeccable/config.local.json
 .impeccable/review/

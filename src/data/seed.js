@@ -17,7 +17,7 @@ function connectionFromAgency(agency, extra) {
     mccs: agency.mccs,
     countries: extra.countries ?? defaultCountriesFor(agency.country),
     status: extra.status ?? 'live',
-    hookPath: `/v1/credits/${agency.id}`,
+    hookPath: `/api/hooks/credits/${agency.id}`,
     hmacSecret: extra.hmacSecret,
     createdAt: extra.createdAt ?? days(40),
   }
@@ -73,6 +73,7 @@ export function buildSeed() {
       endToEndId: 'BA-JC-2026-09-08-4412',
       remittance: 'Bürgergeld September — living costs',
       color: '#7C6CF0',
+      cardholderId: 'ch_lena',
     },
     {
       id: 'env_wohngeld',
@@ -86,6 +87,7 @@ export function buildSeed() {
       endToEndId: 'WG-BE-2026-09-05-118',
       remittance: 'Wohngeld Miete September',
       color: '#C9894A',
+      cardholderId: 'ch_lena',
     },
     {
       id: 'env_gkv',
@@ -99,6 +101,7 @@ export function buildSeed() {
       endToEndId: 'TK-ZUZahlung-9921',
       remittance: 'Zuzahlungsbefreiung Rest',
       color: '#2F9E8A',
+      cardholderId: 'ch_lena',
     },
   ]
 
@@ -121,7 +124,7 @@ export function buildSeed() {
       expMonth: '10',
       expYear: '2030',
       cvv: '318',
-      network: 'Mastercard',
+      network: 'Visa',
       memo: 'Stipend · Lena Vogt',
     },
   }
@@ -181,6 +184,7 @@ function tx({ hoursAgo, merchant, city, mcc, amount, env, status, result, detail
       category: 'CARD',
     },
     note,
+    cardholderId: 'ch_lena',
   }
 }
 
@@ -197,5 +201,6 @@ function credit({ daysAgo, connectionId, amount, e2e, protocol, remittance }) {
     status: 'SETTLED',
     method: 'book_transfer',
     lithicCategory: 'BALANCE_OR_FUNDING',
+    cardholderId: 'ch_lena',
   }
 }

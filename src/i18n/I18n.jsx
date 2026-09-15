@@ -3,6 +3,8 @@ import { setFormatLocale } from '../lib/format.js'
 import { LOCALES, messages } from './messages.js'
 
 const KEY = 'stipend.lang'
+// Source-text catalogs for tx(), one file per language, loaded only when that language is active.
+const CATALOGS = import.meta.glob('./catalog/*.js')
 const I18nContext = createContext(null)
 
 function readLang() {
@@ -27,6 +29,22 @@ function interpolate(str, vars) {
 
 export function I18nProvider({ children }) {
   const [lang, setLangState] = useState(readLang)
+  const [catalog, setCatalog] = useState({})
+
+  useEffect(() => {
+    let cancelled = false
+    const load = CATALOGS[`./catalog/${lang}.js`]
+    if (!load) {
+      setCatalog({})
+      return undefined
+    }
+    load()
+      .then((mod) => !cancelled && setCatalog(mod.default || {}))
+      .catch(() => !cancelled && setCatalog({}))
+    return () => {
+      cancelled = true
+    }
+  }, [lang])
 
   useEffect(() => {
     const tag = LOCALES[lang]?.tag || 'en-GB'
@@ -39,13 +57,17 @@ export function I18nProvider({ children }) {
       const raw = lookup(messages[lang], path) ?? lookup(messages.en, path) ?? path
       return interpolate(raw, vars)
     }
+    // tx('English source', vars): English is the key; missing translations fall back to it.
+    function tx(text, vars) {
+      return interpolate(catalog[text] ?? text, vars)
+    }
     function setLang(next) {
       if (!LOCALES[next]) return
       localStorage.setItem(KEY, next)
       setLangState(next)
     }
-    return { lang, locale: LOCALES[lang], t, setLang, languages: Object.values(LOCALES) }
-  }, [lang])
+    return { lang, locale: LOCALES[lang], t, tx, setLang, languages: Object.values(LOCALES) }
+  }, [lang, catalog])
 
   return <I18nContext.Provider value={api}>{children}</I18nContext.Provider>
 }

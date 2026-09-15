@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   DashboardSquare01Icon,
@@ -7,11 +7,15 @@ import {
   UserGroupIcon,
   BanIcon,
   FlaskConicalIcon,
-  ArrowLeft01Icon,
   Logout01Icon,
+  Analytics01Icon,
+  Alert02Icon,
+  Chart01Icon,
+  ShieldCheckIcon,
+  WebhookIcon,
+  File01Icon,
 } from '@hugeicons/core-free-icons'
 import { useStore } from '../store.jsx'
-import { COUNTRIES } from '../data/agencies.js'
 import HeaderTools from '../components/HeaderTools.jsx'
 import BrandLockup from '../components/BrandLockup.jsx'
 import { useI18n } from '../i18n/I18n.jsx'
@@ -22,12 +26,21 @@ const NAV = [
   { to: '/admin/credits', key: 'credits', icon: BankIcon },
   { to: '/admin/cardholders', key: 'cardholders', icon: UserGroupIcon },
   { to: '/admin/declines', key: 'declines', icon: BanIcon },
-  { to: '/admin/playground', key: 'playground', icon: FlaskConicalIcon },
+  { to: '/admin/rules', key: 'rules', icon: ShieldCheckIcon },
+  { to: '/admin/asa', key: 'asa', icon: Analytics01Icon },
+  { to: '/admin/integrations', key: 'integrations', icon: WebhookIcon },
+  { to: '/admin/ledger', key: 'ledger', icon: Chart01Icon },
+  { to: '/admin/cases', key: 'cases', icon: Alert02Icon },
+  { to: '/admin/sandbox', key: 'sandbox', icon: FlaskConicalIcon },
+  { to: '/admin/audit', key: 'audit', icon: File01Icon },
 ]
 
 export default function AdminShell() {
-  const { country, setCountry, operator } = useStore()
-  const { t } = useI18n()
+  const { operator, logout, user } = useStore()
+  const { tx, t } = useI18n()
+  const loc = useLocation()
+  const name = user?.name || operator?.name || 'Operator'
+  const onSettings = loc.pathname === '/admin/settings'
   return (
     <div className="app">
       <aside className="sidebar">
@@ -39,19 +52,9 @@ export default function AdminShell() {
               {t(`adminNav.${n.key}`)}
             </NavLink>
           ))}
-          <NavLink to="/">
-            <HugeiconsIcon icon={ArrowLeft01Icon} size={18} color="currentColor" />
-            {t('adminNav.cardholderApp')}
-          </NavLink>
         </nav>
         <div className="side-foot">
-          <div className="device">
-            <div>
-              <strong>{t('adminNav.countryScope')}</strong>
-              <small>{t('adminNav.countryScopeHint')}</small>
-            </div>
-          </div>
-          <button className="logout" type="button">
+          <button className="logout" type="button" onClick={logout}>
             <HugeiconsIcon icon={Logout01Icon} size={16} color="currentColor" /> {t('nav.logout')}
           </button>
         </div>
@@ -59,32 +62,21 @@ export default function AdminShell() {
       <div className="main">
         <header className="topbar">
           <div>
-            <h1>{t('adminNav.title')}</h1>
-            <div className="sub">{t('adminNav.sub')}</div>
+            <h1>{onSettings ? t('settings.title') : t('adminNav.title')}</h1>
+            <div className="sub">{onSettings ? tx("Preferences, program details and server configuration") : t('adminNav.sub')}</div>
           </div>
-          <HeaderTools>
-            <label>
-              <span className="visually-hidden">Country</span>
-              <select className="country-select" value={country} onChange={(e) => setCountry(e.target.value)}>
-                {COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {t(`country.${c.code}`)}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <HeaderTools showSettings settingsPath="/admin/settings">
             <div className="userchip">
               <div className="avatar">
-                {operator.name
+                {name
                   .split(' ')
                   .map((p) => p[0])
-                  .join('')}
+                  .join('')
+                  .slice(0, 2)}
               </div>
               <div>
-                <strong>{operator.name}</strong>
-                <small>
-                  {operator.role} · {operator.org}
-                </small>
+                <strong>{name}</strong>
+                <small>{user?.email}</small>
               </div>
             </div>
           </HeaderTools>

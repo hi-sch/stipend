@@ -128,6 +128,17 @@ export const MCC_GROUPS = [
       ['5947', 'Gift, card, novelty shops'],
     ],
   },
+  {
+    id: 'agri',
+    label: 'Agriculture & farm inputs',
+    color: '#6E8B3D',
+    codes: [
+      ['0763', 'Agricultural co-operatives'],
+      ['0780', 'Landscaping and horticultural services'],
+      ['5261', 'Nurseries, lawn and garden supply'],
+      ['5085', 'Industrial supplies'],
+    ],
+  },
 ]
 
 export const MCC_BY_CODE = Object.fromEntries(
@@ -155,7 +166,7 @@ export const PRESETS = {
   living: { label: 'Basic living', groups: ['food', 'energy', 'household', 'clothing'] },
   family: { label: 'Family & childcare', groups: ['food', 'childcare', 'education', 'clothing'] },
   mobility: { label: 'Mobility', groups: ['transport'] },
-  farm: { label: 'Agricultural inputs', groups: ['housing'] },
+  farm: { label: 'Agricultural inputs', groups: ['agri', 'energy'] },
 }
 
 export function codesForGroups(groupIds) {

@@ -1,242 +1,142 @@
-import { createContext, useContext, useMemo, useState } from 'react'
-import { buildSeed } from './data/seed.js'
-import { AGENCIES, defaultCountriesFor } from './data/agencies.js'
-import { authorizeSpend } from './lib/auth.js'
-import { uid } from './lib/format.js'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { api, setActingCardholder } from './api.js'
 
-const KEY = 'stipend.v1'
 const StoreContext = createContext(null)
+const PREFS_KEY = 'stipend.ui'
 
-function load() {
+function readPrefs() {
   try {
-    const raw = localStorage.getItem(KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (!parsed.cardholders?.length && parsed.cardholder) {
-        parsed.cardholders = [parsed.cardholder]
-      }
-      parsed.connections = (parsed.connections || []).map((c) =>
-        c.countries ? c : { ...c, countries: defaultCountriesFor(c.country) },
-      )
-      parsed.envelopes = (parsed.envelopes || []).map((e) => {
-        if (e.countries) return e
-        const conn = parsed.connections.find((c) => c.id === e.connectionId)
-        return { ...e, countries: conn?.countries ?? [] }
-      })
-      return parsed
-    }
+    return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')
   } catch {
-    /* ignore */
+    return {}
   }
-  return buildSeed()
 }
 
-function persist(state) {
-  localStorage.setItem(KEY, JSON.stringify(state))
+function writePrefs(next) {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(next))
+  } catch {
+    /* preferences are optional */
+  }
 }
 
 export function StoreProvider({ children }) {
-  const [state, setState] = useState(load)
+  const [user, setUser] = useState(undefined)
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const [prefs, setPrefs] = useState(readPrefs)
+  const loading = useRef(null)
+  const version = useRef(0)
 
-  const api = useMemo(() => {
-    const patch = (fn) => {
-      setState((prev) => {
-        const next = fn(prev)
-        persist(next)
+  const updatePrefs = useCallback((patch) => {
+    setPrefs((prev) => {
+      const next = { ...prev, ...patch }
+      writePrefs(next)
+      return next
+    })
+  }, [])
+
+  const refresh = useCallback(async () => {
+    if (loading.current) return loading.current
+    loading.current = api('GET', '/api/app/state')
+      .then((next) => {
+        version.current = next.version
+        setData(next)
+        setError('')
         return next
       })
-    }
+      .catch((err) => {
+        if (err.status === 401) {
+          setUser(null)
+          setData(null)
+        } else {
+          setError(err.message)
+        }
+        return null
+      })
+      .finally(() => {
+        loading.current = null
+      })
+    return loading.current
+  }, [])
 
+  useEffect(() => {
+    api('GET', '/api/auth/session')
+      .then((res) => setUser(res.user))
+      .catch(() => setUser(null))
+  }, [])
+
+  const actingId = user?.role === 'admin' ? prefs.viewAs || null : null
+  useEffect(() => {
+    setActingCardholder(actingId)
+  }, [actingId])
+
+  useEffect(() => {
+    if (!user || user.mustChangePassword) return undefined
+    setActingCardholder(user.role === 'admin' ? prefs.viewAs || null : null)
+    refresh()
+    api('POST', '/api/me/sync').catch(() => null)
+    const source = new EventSource('/api/app/stream')
+    source.addEventListener('version', (event) => {
+      if (Number(event.data) !== version.current) refresh()
+    })
+    return () => source.close()
+  }, [user, prefs.viewAs, refresh])
+
+  const value = useMemo(() => {
+    async function act(method, path, body) {
+      const result = await api(method, path, body)
+      await refresh()
+      return result
+    }
+    const notifications = (data?.notifications || []).map((n) => ({ ...n, when: n.at, unread: !n.read }))
     return {
-      ...state,
-      setCountry(country) {
-        patch((s) => ({ ...s, country }))
+      ready: user !== undefined,
+      user,
+      error,
+      ...(data || {}),
+      notifications,
+      loaded: Boolean(data),
+      publicOrigin: data?.appSettings?.publicUrl || window.location.origin,
+      country: prefs.country || 'DE',
+      setCountry: (country) => updatePrefs({ country }),
+      viewAs: actingId,
+      selectCardholder: (id) => {
+        setActingCardholder(id)
+        updatePrefs({ viewAs: id })
       },
-      resetDemo() {
-        const fresh = buildSeed()
-        persist(fresh)
-        setState(fresh)
+      refresh,
+      act,
+      api,
+      async login(email, password) {
+        const res = await api('POST', '/api/auth/login', { email, password })
+        setUser(res.user)
+        return res.user
       },
-      connectionById(id) {
-        return state.connections.find((c) => c.id === id)
+      async logout() {
+        await api('POST', '/api/auth/logout').catch(() => null)
+        setUser(null)
+        setData(null)
       },
-      envelopeById(id) {
-        return state.envelopes.find((e) => e.id === id)
+      async changePassword(currentPassword, newPassword) {
+        await api('POST', '/api/auth/password', { currentPassword, newPassword })
+        setUser((u) => ({ ...u, mustChangePassword: false }))
       },
-      createConnection(input) {
-        const id = input.id || uid('conn')
-        const conn = {
-          id,
-          name: input.name,
-          country: input.country,
-          agency: input.agency,
-          system: input.system || 'pain.001',
-          protocol: input.protocol,
-          purpose: input.purpose || 'SSBE',
-          mccs: input.mccs,
-          countries: input.countries ?? defaultCountriesFor(input.country),
-          status: 'sandbox',
-          hookPath: `/v1/credits/${id}`,
-          hmacSecret: `sk_live_${id.replace(/-/g, '').slice(0, 6)}_${Math.random().toString(16).slice(2, 10)}`,
-          createdAt: new Date().toISOString(),
-        }
-        patch((s) => ({ ...s, connections: [conn, ...s.connections] }))
-        return conn
-      },
-      updateConnection(id, updates) {
-        patch((s) => ({
-          ...s,
-          connections: s.connections.map((c) => (c.id === id ? { ...c, ...updates } : c)),
-          envelopes: s.envelopes.map((e) =>
-            e.connectionId === id
-              ? {
-                  ...e,
-                  connectionName: updates.name ?? e.connectionName,
-                  mccs: updates.mccs ?? e.mccs,
-                  countries: updates.countries ?? e.countries,
-                }
-              : e,
-          ),
-        }))
-      },
-      creditFromHook({ connectionId, amountCents, endToEndId, remittance, protocol }) {
-        let posted = null
-        patch((s) => {
-          const conn = s.connections.find((c) => c.id === connectionId)
-          if (!conn) return s
-          const credit = {
-            id: uid('crd'),
-            created: new Date().toISOString(),
-            connectionId,
-            amountCents,
-            currency: 'EUR',
-            endToEndId: endToEndId || `E2E-${Date.now()}`,
-            protocol: protocol || conn.protocol,
-            remittance: remittance || `Credit via ${conn.name}`,
-            status: 'SETTLED',
-            method: 'book_transfer',
-            lithicCategory: 'BALANCE_OR_FUNDING',
-          }
-          posted = credit
-          const existing = s.envelopes.find((e) => e.connectionId === connectionId)
-          let envelopes
-          if (existing) {
-            envelopes = s.envelopes.map((e) =>
-              e.id === existing.id
-                ? { ...e, balanceCents: e.balanceCents + amountCents, receivedAt: credit.created }
-                : e,
-            )
-          } else {
-            envelopes = [
-              {
-                id: uid('env'),
-                connectionId,
-                connectionName: conn.name,
-                balanceCents: amountCents,
-                spentCents: 0,
-                mccs: conn.mccs,
-                countries: conn.countries ?? [],
-                receivedAt: credit.created,
-                endToEndId: credit.endToEndId,
-                remittance: credit.remittance,
-                color: colorFor(s.envelopes.length),
-              },
-              ...s.envelopes,
-            ]
-          }
-          return { ...s, credits: [credit, ...s.credits], envelopes }
-        })
-        return posted
-      },
-      tryPurchase({ amountCents, mcc, merchant, city, country }) {
-        let outcome = null
-        patch((s) => {
-          const merchantCountry = country || 'DEU'
-          const decision = authorizeSpend(s.envelopes, { amountCents, mcc, country: merchantCountry })
-          const created = new Date().toISOString()
-          const row = {
-            id: uid('txn'),
-            created,
-            amountCents,
-            currency: 'EUR',
-            status: decision.approved ? 'SETTLED' : 'DECLINED',
-            result: decision.approved ? 'APPROVED' : 'DECLINED',
-            detailedResults: decision.detailedResults,
-            envelopeId: decision.envelopeId ?? null,
-            merchant: {
-              descriptor: merchant || `MCC ${mcc} merchant`,
-              city: city || s.cardholder.city,
-              country: merchantCountry,
-              mcc,
-            },
-            lithic: { category: 'CARD' },
-            note: decision.approved ? null : decision.reason,
-          }
-          outcome = { ...decision, transaction: row }
-          let envelopes = s.envelopes
-          if (decision.approved) {
-            envelopes = s.envelopes.map((e) =>
-              e.id === decision.envelopeId
-                ? {
-                    ...e,
-                    balanceCents: e.balanceCents - amountCents,
-                    spentCents: e.spentCents + amountCents,
-                  }
-                : e,
-            )
-          }
-          return { ...s, transactions: [row, ...s.transactions], envelopes }
-        })
-        return outcome
-      },
-      setCardState(next) {
-        patch((s) => ({
-          ...s,
-          cardholder: { ...s.cardholder, card: { ...s.cardholder.card, state: next } },
-        }))
-      },
-      agenciesForCountry(code) {
-        return AGENCIES.filter((a) => a.country === code)
-      },
-      createCardholder(input) {
-        const id = uid('ch')
-        const lastFour = String(1000 + Math.floor(Math.random() * 9000))
-        const person = {
-          id,
-          firstName: input.firstName.trim(),
-          lastName: input.lastName.trim(),
-          email: input.email.trim(),
-          phone: input.phone?.trim() || '',
-          city: input.city.trim(),
-          country: input.country,
-          ibanRef: '',
-          lithicAccount: crypto.randomUUID?.() || uid('acct'),
-          card: {
-            token: uid('card'),
-            type: 'VIRTUAL',
-            state: 'OPEN',
-            pan: `424242424242${lastFour}`,
-            lastFour,
-            expMonth: '10',
-            expYear: '2030',
-            cvv: String(100 + Math.floor(Math.random() * 900)),
-            network: 'Mastercard',
-            memo: `Stipend · ${input.firstName.trim()} ${input.lastName.trim()}`,
-          },
-        }
-        patch((s) => ({ ...s, cardholders: [person, ...(s.cardholders || [s.cardholder])] }))
-        return person
-      },
-      selectCardholder(id) {
-        patch((s) => {
-          const next = (s.cardholders || []).find((c) => c.id === id)
-          return next ? { ...s, cardholder: next } : s
-        })
-      },
+      markNotificationsRead: () => act('POST', '/api/me/notifications/read'),
+      setCardState: (state) => act('POST', '/api/me/card/state', { state }),
+      tryPurchase: (body) => act('POST', '/api/me/purchases', body),
+      fileDispute: (body) => act('POST', '/api/me/disputes', body),
+      sync: () => act('POST', '/api/me/sync'),
+      setEmailAlerts: (emailAlerts) => act('PATCH', '/api/me/prefs', { emailAlerts }),
+      setPrefs: (prefs) => act('PATCH', '/api/me/prefs', prefs),
+      updateProfile: (fields) => act('PATCH', '/api/me/profile', fields),
+      revokeOtherSessions: () => act('POST', '/api/auth/sessions/revoke-others'),
+      envelopeById: (id) => (data?.envelopes || []).find((e) => e.id === id),
+      connectionById: (id) => (data?.connections || []).find((c) => c.id === id),
     }
-  }, [state])
+  }, [user, data, error, prefs, actingId, refresh, updatePrefs])
 
-  return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>
+  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
 }
 
 export function useStore() {
@@ -245,7 +145,24 @@ export function useStore() {
   return ctx
 }
 
-const PALETTE = ['#7C6CF0', '#C9894A', '#2F9E8A', '#3D7EDB', '#D46B8C', '#E0A21A']
-function colorFor(i) {
-  return PALETTE[i % PALETTE.length]
+/** Small helper for pages that call the API and show busy/error/result state. */
+export function useAction() {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState(null)
+  const run = useCallback(async (fn) => {
+    setBusy(true)
+    setError('')
+    try {
+      const value = await fn()
+      setResult(value)
+      return value
+    } catch (err) {
+      setError(err.message || String(err))
+      return undefined
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+  return { busy, error, result, run, setError, setResult }
 }
