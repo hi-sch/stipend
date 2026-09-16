@@ -255,7 +255,7 @@ function PurchaseTester() {
 
 function LifecycleTester() {
   const { tx } = useI18n()
-  const { allTransactions, refresh, cardholders } = useStore()
+  const { allTransactions, refresh } = useStore()
   const live = allTransactions.filter((t) => t.live)
   const [txnId, setTxnId] = useState(live[0]?.id || '')
   const txn = live.find((t) => t.id === txnId)
@@ -276,10 +276,9 @@ function LifecycleTester() {
           <label htmlFor="lc-txn">{tx("Transaction")}</label>
           <select id="lc-txn" value={txnId} onChange={(e) => setTxnId(e.target.value)}>
             {live.map((t) => {
-              const h = cardholders.find((c) => c.id === t.cardholderId)
               return (
                 <option key={t.id} value={t.id}>
-                  {t.merchant?.descriptor} · {eur(t.amountCents)} · {t.status} · {h?.firstName}
+                  {t.merchant?.descriptor} · {eur(t.amountCents)} · {t.status} · {t.cardholderName || ''}
                 </option>
               )
             })}

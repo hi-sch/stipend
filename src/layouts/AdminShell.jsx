@@ -14,6 +14,7 @@ import {
   ShieldCheckIcon,
   WebhookIcon,
   File01Icon,
+  CheckmarkBadge01Icon,
 } from '@hugeicons/core-free-icons'
 import { useStore } from '../store.jsx'
 import HeaderTools from '../components/HeaderTools.jsx'
@@ -31,6 +32,7 @@ const NAV = [
   { to: '/admin/integrations', key: 'integrations', icon: WebhookIcon },
   { to: '/admin/ledger', key: 'ledger', icon: Chart01Icon },
   { to: '/admin/cases', key: 'cases', icon: Alert02Icon },
+  { to: '/admin/approvals', key: 'approvals', icon: CheckmarkBadge01Icon },
   { to: '/admin/sandbox', key: 'sandbox', icon: FlaskConicalIcon },
   { to: '/admin/audit', key: 'audit', icon: File01Icon },
 ]

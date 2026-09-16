@@ -1,0 +1,191 @@
+# Stipend chart values.
+#
+# The defaults install a working program with no ingress and no single sign-on: a
+# ClusterIP Service, a database, and local operator passwords. Turn each piece on as the
+# infrastructure for it exists.
+#
+# The only value with no default is image.repository; install fails with a clear message
+# rather than trying to pull a placeholder.
+
+image:
+  # Required, e.g. ghcr.io/your-org/stipend
+  repository: ""
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Absolute URL cardholders and Lithic reach this program on. Used for hook URLs, ASA and
+# webhook enrollment, and links in email. Derived from the ingress host when ingress is
+# enabled; set it explicitly when something else terminates traffic.
+publicUrl: ""
+
+replicaCount: 2
+
+# Cost allocation. No cost tooling is installed, but every object can carry labels so
+# whatever the platform already uses for showback can group Stipend's spend.
+#
+# Off by default: labels with invented values are worse than no labels, because they land
+# in cost reports looking authoritative. Turn this on with your real codes.
+costAllocation:
+  enabled: false
+  labels: {}
+    # cost-center: cc-4711
+    # owner: payments-platform
+    # environment: production
+
+# Requests and limits are not optional here: without requests the scheduler cannot place
+# the pod sensibly and no cost model can attribute anything to it.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    # No CPU limit on purpose: throttling an authorizer that has a ~2s ASA deadline turns
+    # a busy moment into declined card payments. Memory is limited, CPU is requested.
+    memory: 512Mi
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 5175
+
+# Off until there is an ingress controller and a hostname. Until then the Service is
+# reachable in-cluster, or through `kubectl port-forward`.
+ingress:
+  enabled: false
+  className: nginx
+  # Required when enabled. Also becomes PUBLIC_URL, which Lithic hook and webhook
+  # enrollment uses, unless publicUrl above overrides it.
+  host: ""
+  tls:
+    enabled: true
+    secretName: stipend-tls
+  # For cert-manager, add:
+  #   cert-manager.io/cluster-issuer: letsencrypt-production
+  annotations: {}
+
+# Rollout safety
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+# CloudNativePG cluster. Requires the CNPG operator installed in the cluster.
+postgres:
+  enabled: true
+  instances: 3          # one primary, two standbys
+  imageName: ""         # empty uses the operator default
+  storage:
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  parameters:
+    max_connections: "200"
+    # The backstop for connections the application has lost track of.
+    #
+    # A pooled connection that is checked out and never released is invisible to the pool's
+    # own idle timeout and stays open for the life of the process, so the only thing that can
+    # reclaim it is the server. Ten minutes is far longer than any request here, and the two
+    # connections that are meant to sit idle — the listener behind live updates, and a
+    # migration holding its advisory lock — exempt themselves per session.
+    idle_session_timeout: "10min"
+    # A transaction abandoned mid-flight holds its row locks until something closes it. This
+    # is a different failure from the one above and wants a much shorter fuse.
+    idle_in_transaction_session_timeout: "60s"
+  # Continuous backup to object storage. Off by default because it needs credentials;
+  # turn it on for anything holding real money movement.
+  backup:
+    enabled: false
+    destinationPath: ""        # e.g. s3://bucket/stipend
+    endpointURL: ""
+    retentionPolicy: "30d"
+    # Name of an existing Secret with ACCESS_KEY_ID / ACCESS_SECRET_KEY keys.
+    credentialsSecret: ""
+  # Point at an existing database instead of letting the chart create one.
+  external:
+    enabled: false
+    existingSecret: ""
+    existingSecretKey: uri
+
+# Application secrets. The chart never holds a secret value; it references Secrets you
+# create out of band (sealed-secrets, external-secrets, SOPS, whatever you already run).
+secrets:
+  # REQUIRED. Must contain LITHIC_API_KEY, and any Lithic signing secrets you use.
+  lithicSecretName: stipend-lithic
+  # Required when sso.enabled. Must contain OIDC_CLIENT_SECRET.
+  oidcSecretName: stipend-oidc
+  # Optional. Must contain SMTP_URL.
+  smtpSecretName: ""
+  # Strongly recommended. Must contain STIPEND_SECRET_KEY, which encrypts the connection
+  # HMAC secrets and the Lithic signing secrets in the database. Without it they are stored
+  # in clear and a database dump is a full key compromise. Every replica reads the same
+  # Secret; a pod with a different key cannot read what the others wrote.
+  encryptionSecretName: ""
+
+# Operator single sign-on. Cardholders keep local passwords either way, so leaving this
+# off means operators sign in with passwords too.
+sso:
+  enabled: false
+  issuer: ""                # Required when enabled, e.g. https://auth.example.org/realms/stipend
+  clientId: stipend
+  scopes: ""
+  groupsClaim: groups
+  # Empty means every user the identity provider authenticates becomes an operator.
+  adminGroup: ""
+
+# Two-operator approval for sensitive writes: cash rules, recalls, cardholder deletion,
+# external payments, settings. A request cannot be approved by the operator who made it, so
+# only turn this on for a program that has at least two operator accounts.
+approvals:
+  required: false
+
+# Read the client address from X-Forwarded-For rather than from the socket.
+#
+# True because this chart expects an ingress in front: without it every external request
+# looks like it came from the ingress controller, and a rate limit keyed on the address
+# cannot tell one client from another. Set it to false if you expose the Service directly,
+# where the socket address is the truth and the header is whatever the caller typed.
+trustProxy: true
+
+lithic:
+  environment: sandbox      # sandbox | production
+  productId: "100"
+
+mail:
+  from: "Stipend <no-reply@example.com>"
+
+logging:
+  format: json
+  level: info
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

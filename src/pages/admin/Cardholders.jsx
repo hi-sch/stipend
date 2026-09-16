@@ -140,12 +140,12 @@ export default function Cardholders() {
                         ))}
                       </select>
                       {approved && p.cashUsage && (
-                        <div className="muted" style={{ fontSize: '0.8rem' }}>
+                        <div className="muted" style={{ fontSize: '0.8rem', margin: '4px 2px' }}>
                           {tx("{0} used", { 0: eur(p.cashUsage.usedCents) })}
                         </div>
                       )}
                       {p.cash?.status === 'REQUESTED' && (
-                        <div style={{ fontSize: '0.8rem' }}>
+                        <div style={{ fontSize: '0.8rem', margin: '4px 2px' }}>
                           <StatusBadge status="REQUESTED" />{' '}
                           {eur(p.cash.requestedCents)} {tx(CASH_PER[p.cash.requestedPeriod] || 'per month')}
                         </div>

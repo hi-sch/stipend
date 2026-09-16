@@ -6,13 +6,11 @@ import { AGENCIES } from '../../data/agencies.js'
 import { eur } from '../../lib/format.js'
 import { ActionButton, Section, StatusBadge, useLoad } from '../../components/ui.jsx'
 import { get, post } from '../../api.js'
-import { formatDateTime } from '../../lib/format.js'
 import { useI18n } from '../../i18n/I18n.jsx'
 
 export default function Overview() {
   const { tx, t } = useI18n()
   const { country, connections, allCredits, allTransactions, lithic, cardholders, refresh, environment, mail, allOutbox, appSettings } = useStore()
-  const backups = useLoad(() => get('/api/admin/backups'), [])
   const health = useLoad(() => get('/api/health'), [])
   const queued = (allOutbox || []).filter((m) => (m.status || 'queued') === 'queued').length
   const failedMail = (allOutbox || []).filter((m) => m.status === 'failed').length
@@ -108,8 +106,10 @@ export default function Overview() {
               </span>
             </li>
             <li>
-              <span>{tx("Last backup")}</span>
-              <span className="toolbar">{tx("{0} · {1} kept", { 0: backups.data?.lastBackupAt ? formatDateTime(backups.data.lastBackupAt) : 'never', 1: backups.data?.backups?.length || 0 })}<ActionButton onClick={() => post('/api/admin/backups').then(backups.reload)}>{tx("Back up now")}</ActionButton>
+              <span>{tx("Database")}</span>
+              <span className="toolbar">
+                <StatusBadge status={health.data?.db?.ok ? 'yes' : 'no'} />
+                {tx("Backups are managed by the database cluster")}
               </span>
             </li>
             <li>
@@ -144,8 +144,8 @@ export default function Overview() {
               <StatusBadge status={live ? live.status : 'not connected'} />
               <h3>{a.name}</h3>
               <div className="muted">{a.agency}</div>
-              <div style={{ fontSize: '0.85rem' }}>{a.system}</div>
-              <div style={{ fontSize: '0.85rem' }}>{tx("{0} MCCs · purpose {1}", { 0: a.mccs.length, 1: a.purpose })}</div>
+              <div style={{ fontSize: '0.78rem' }}>{a.system}</div>
+              <div style={{ fontSize: '0.78rem' }}>{tx("{0} MCCs · purpose {1}", { 0: a.mccs.length, 1: a.purpose })}</div>
               {live ? <Link to={`/admin/connections/${live.id}`}>{tx("Open")}</Link> : <Link to={`/admin/connections/new?agency=${a.id}`}>{tx("Connect")}</Link>}
             </article>
           )

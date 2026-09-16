@@ -17,6 +17,9 @@ export default function ConnectionDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  // cardholders is still needed here, but not for the credit rows: the sample pain.001 and
+  // JSON files this page shows are built from a real cardholder's beneficiary reference and
+  // IBAN, so an agency can see what a credit for a real person looks like.
   const { connections, allCredits, cardholders, reports, act, refresh, publicOrigin, appSettings } = useStore()
   const conn = connections.find((c) => c.id === id)
   const [secret, setSecret] = useState(location.state?.secret || '')
@@ -139,12 +142,11 @@ export default function ConnectionDetail() {
           <table className="data">
             <tbody>
               {related.slice(0, 20).map((c) => {
-                const h = cardholders.find((x) => x.id === c.cardholderId)
                 return (
                   <tr key={c.id}>
                     <td>
                       <code>{c.endToEndId}</code>
-                      <div className="muted" style={{ fontSize: '0.8rem' }}>{h ? `${h.firstName} ${h.lastName}` : c.cardholderId}</div>
+                      <div className="muted" style={{ fontSize: '0.8rem' }}>{c.cardholderName || c.cardholderId}</div>
                     </td>
                     <td>{formatDateTime(c.created)}</td>
                     <td>

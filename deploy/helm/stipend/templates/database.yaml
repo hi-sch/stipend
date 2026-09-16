@@ -1,0 +1,66 @@
+{{- if and .Values.postgres.enabled (not .Values.postgres.external.enabled) }}
+# CloudNativePG cluster. Requires the CNPG operator to be installed in the cluster:
+#   kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/releases/cnpg-1.25.0.yaml
+#
+# The operator creates a Secret named <cluster>-app holding a ready-made connection URI,
+# which is what the Deployment reads as DATABASE_URL.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "stipend.databaseClusterName" . }}
+  labels:
+    {{- include "stipend.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.postgres.instances }}
+  {{- with .Values.postgres.imageName }}
+  imageName: {{ . }}
+  {{- end }}
+
+  # Money must survive a primary failure, so a commit is not acknowledged until at least
+  # one standby has it.
+  minSyncReplicas: {{ ternary 1 0 (gt (int .Values.postgres.instances) 1) }}
+  maxSyncReplicas: {{ ternary 1 0 (gt (int .Values.postgres.instances) 1) }}
+
+  postgresql:
+    parameters:
+      {{- toYaml .Values.postgres.parameters | nindent 6 }}
+
+  bootstrap:
+    initdb:
+      database: stipend
+      owner: stipend
+      encoding: UTF8
+
+  storage:
+    size: {{ .Values.postgres.storage.size }}
+    {{- with .Values.postgres.storage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+
+  resources:
+    {{- toYaml .Values.postgres.resources | nindent 4 }}
+
+  # Spread instances so one node going away cannot take the whole cluster.
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+
+  {{- if .Values.postgres.backup.enabled }}
+  backup:
+    retentionPolicy: {{ .Values.postgres.backup.retentionPolicy | quote }}
+    barmanObjectStore:
+      destinationPath: {{ required "postgres.backup.destinationPath is required when backup is enabled" .Values.postgres.backup.destinationPath }}
+      {{- with .Values.postgres.backup.endpointURL }}
+      endpointURL: {{ . }}
+      {{- end }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ required "postgres.backup.credentialsSecret is required when backup is enabled" .Values.postgres.backup.credentialsSecret }}
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: {{ .Values.postgres.backup.credentialsSecret }}
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+  {{- end }}
+{{- end }}

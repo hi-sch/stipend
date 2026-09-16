@@ -62,12 +62,11 @@ export default function Cases() {
             </thead>
             <tbody>
               {cases.map((c) => {
-                const holder = cardholders.find((h) => h.id === c.cardholderId)
                 return (
                   <tr key={c.id}>
                     <td>{formatDateTime(c.at)}</td>
                     <td>{c.title}</td>
-                    <td>{holder ? `${holder.firstName} ${holder.lastName}` : '—'}</td>
+                    <td>{c.cardholderName || '—'}</td>
                     <td>
                       {c.merchant}
                       <div className="muted" style={{ fontSize: '0.8rem' }}>{c.mcc}</div>

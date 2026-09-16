@@ -33,6 +33,7 @@ const Ledger = lazy(() => import('./pages/admin/Ledger.jsx'))
 const Cases = lazy(() => import('./pages/admin/Cases.jsx'))
 const Sandbox = lazy(() => import('./pages/admin/Sandbox.jsx'))
 const Audit = lazy(() => import('./pages/admin/Audit.jsx'))
+const Approvals = lazy(() => import('./pages/admin/Approvals.jsx'))
 
 function Loading() {
   const { tx } = useI18n()
@@ -74,6 +75,7 @@ export default function App() {
                 <Route path="integrations" element={<Integrations />} />
                 <Route path="ledger" element={<Ledger />} />
                 <Route path="cases" element={<Cases />} />
+                <Route path="approvals" element={<Approvals />} />
                 <Route path="sandbox" element={<Sandbox />} />
                 <Route path="audit" element={<Audit />} />
                 <Route path="settings" element={<AdminSettings />} />

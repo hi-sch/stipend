@@ -64,6 +64,7 @@ export default function Ledger() {
           <Section title={tx("Fund the program")} hint={tx("Simulates an inbound ACH credit into the program ISSUING account so DISBURSE book transfers for envelope credits can post.")}>
             <form
               className="toolbar"
+              style={{ display: 'flex', alignItems: 'flex-end' }}
               onSubmit={(e) => {
                 e.preventDefault()
               }}
@@ -72,14 +73,16 @@ export default function Ledger() {
                 <span>{tx("Amount (USD in sandbox)")}</span>
                 <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
               </label>
-              <ActionButton
-                className="btn"
-                onClick={async () => {
-                  const res = await post('/api/admin/ledger/fund', { amountCents: Math.round(parseFloat(amount.replace(',', '.')) * 100), financialAccountToken: account || undefined })
-                  setFunded(`Receipt ${res.result || 'submitted'} · ${res.transaction_event_token || ''}`)
-                  await ledger.reload()
-                }}
-              >{tx("Simulate ACH receipt")}</ActionButton>
+              <div style={{ padding: '3px 4px' }}>
+                <ActionButton
+                  className="btn"
+                  onClick={async () => {
+                    const res = await post('/api/admin/ledger/fund', { amountCents: Math.round(parseFloat(amount.replace(',', '.')) * 100), financialAccountToken: account || undefined })
+                    setFunded(`Receipt ${res.result || 'submitted'} · ${res.transaction_event_token || ''}`)
+                    await ledger.reload()
+                  }}
+                >{tx("Simulate ACH receipt")}</ActionButton>
+              </div>
             </form>
             <OkText>{funded}</OkText>
           </Section>
@@ -167,6 +170,7 @@ function Holds({ accounts, account }) {
     <Section title={tx("Holds")} hint={tx("Reserve funds on a financial account (for example while a recall is investigated) and release them by voiding the hold.")}>
       <form
         className="toolbar"
+        style={{ display: 'flex', alignItems: 'flex-end' }}
         onSubmit={async (e) => {
           e.preventDefault()
           setError('')
@@ -194,7 +198,9 @@ function Holds({ accounts, account }) {
           <span>{tx("Expires")}</span>
           <input type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} />
         </label>
-        <button className="btn" type="submit" disabled={!fa}>{tx("Place hold")}</button>
+        <div style={{ padding: '3px 4px' }}>
+          <button className="btn" type="submit" disabled={!fa}>{tx("Place hold")}</button>
+        </div>
       </form>
       <ErrorText error={error || holds.error} />
       <table className="data" style={{ marginTop: 12 }}>

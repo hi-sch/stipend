@@ -3,12 +3,11 @@ import assert from 'node:assert/strict'
 import { appSettings, applySettings, serverConfig, settingSources, validateSettings } from './settings.js'
 
 test('settings fall back from saved value to environment to default', () => {
-  const env = { PUBLIC_URL: 'https://env.example.org', MAIL_FROM: 'Env <env@example.org>', STIPEND_BACKUP_KEEP: '3' }
+  const env = { PUBLIC_URL: 'https://env.example.org', MAIL_FROM: 'Env <env@example.org>' }
   const state = { operator: { org: 'Senatsverwaltung Berlin' }, settings: { app: { mailFrom: 'Saved <saved@example.org>' } } }
   const values = appSettings(state, env)
   assert.equal(values.publicUrl, 'https://env.example.org')
   assert.equal(values.mailFrom, 'Saved <saved@example.org>')
-  assert.equal(values.backupKeep, 3)
   assert.equal(values.defaultDailyLimitCents, 15000)
   assert.equal(values.organisation, 'Senatsverwaltung Berlin')
   assert.deepEqual(
@@ -20,10 +19,9 @@ test('settings fall back from saved value to environment to default', () => {
 })
 
 test('settings validation normalises and rejects bad input', () => {
-  assert.deepEqual(validateSettings({ publicUrl: 'https://stipend.example.org/', supportEmail: ' help@example.org ', backupKeep: '14' }), {
+  assert.deepEqual(validateSettings({ publicUrl: 'https://stipend.example.org/', supportEmail: ' help@example.org ' }), {
     publicUrl: 'https://stipend.example.org',
     supportEmail: 'help@example.org',
-    backupKeep: 14,
   })
   assert.deepEqual(validateSettings({ mailFrom: 'Stipend <no-reply@example.org>', supportPhone: null }), { mailFrom: 'Stipend <no-reply@example.org>', supportPhone: null })
   for (const bad of [
@@ -32,7 +30,6 @@ test('settings validation normalises and rejects bad input', () => {
     { supportEmail: 'nope' },
     { defaultDailyLimitCents: 5 },
     { cardSpendLimitDuration: 'WEEKLY' },
-    { backupKeep: 0 },
     { programName: '' },
     { apiKey: 'x' },
   ]) {

@@ -7,6 +7,8 @@ colors:
   lilac-ink: "#3d348b"
   peach: "#f3e4d2"
   peach-ink: "#7a4e22"
+  mint: "#d8efe8"
+  mint-ink: "#1d6b5c"
   dark: "#171717"
   dark-2: "#2a2a2a"
   on-dark: "#f6f6f4"
@@ -198,6 +200,23 @@ A warm paper field, two pastel plates, one charcoal plate, and a reserved violet
 - **Muted Slate** (`muted`): Supporting copy, idle nav, table headers.
 - **Hairline** (`line`): Dividers, field borders, ghost-button stroke.
 - **Cool Wash** (`wash`): Search pills and hook code wells.
+
+### Supporting
+
+Small, single-purpose colours. They are not plates, not chart series, and not on the palette
+for general use — each one belongs to the thing it is named for.
+
+- **Mint** (`mint`) with **Mint Ink** (`mint-ink`): The cash-limit meter — mint is the track,
+  mint ink the portion used. This is the one pastel pair that is not a KPI plate, which is
+  why cash reads as its own kind of thing rather than a fourth envelope.
+- **Live Dot** (`#3bb56a`): The 8px dot on the device chip, meaning connected. The only place
+  a saturated green appears.
+- **On-Dark Muted** (`#9aa0a8`, `#c8cad0`, `#d4d6dc`): Supporting text on the charcoal plate,
+  the virtual card and the chart tooltip, where Muted Slate has too little contrast.
+- **Delta Up** (`#7ddea8`): A rise shown on the charcoal plate. Ok green is for badges on
+  paper; it is unreadable on charcoal.
+- **Secret Notice** (`#fff8e8` on `#f0dfb5`): The one-time password callout, shown once and
+  never again. Warmer than Warn Wash on purpose: it is a thing to act on, not a status.
 
 ### Chart series
 - **Envelope Violet** (`envelope-violet`), **Envelope Clay** (`envelope-clay`), **Envelope Teal** (`envelope-teal`): Donut strokes, legend swatches, stacked spend-area fills. One color per Connection on a screen.

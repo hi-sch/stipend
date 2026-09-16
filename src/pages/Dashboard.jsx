@@ -44,6 +44,11 @@ export default function Dashboard() {
     return blob.includes(q.toLowerCase())
   })
 
+  // `lang` is not read in here, but periodChart labels its buckets with
+  // toLocaleDateString(getFormatLocale()), and that locale is module-level state which
+  // changes when the language does. Without this dependency the chart keeps the previous
+  // language's weekday and month names until something else happens to invalidate it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const chart = useMemo(() => periodChart(transactions, envelopes, range), [transactions, envelopes, range, lang])
   const top = useMemo(() => topMerchants(transactions), [transactions])
   const heat = useMemo(() => mccHeat(transactions), [transactions])

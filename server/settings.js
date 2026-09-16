@@ -13,14 +13,12 @@ export const SETTINGS_DEFAULTS = {
   cardSpendLimitDuration: 'MONTHLY',
   cardProductId: '',
   mailFrom: 'Stipend <no-reply@stipend.local>',
-  backupKeep: 7,
 }
 
 const ENV_FALLBACK = {
   publicUrl: 'PUBLIC_URL',
   cardProductId: 'LITHIC_PRODUCT_ID',
   mailFrom: 'MAIL_FROM',
-  backupKeep: 'STIPEND_BACKUP_KEEP',
 }
 
 export const SPEND_LIMIT_DURATIONS = ['TRANSACTION', 'MONTHLY', 'ANNUALLY', 'FOREVER']
@@ -42,9 +40,13 @@ export const SERVER_CONFIG = [
   { key: 'HOST', group: 'server' },
   { key: 'PORT', group: 'server' },
   { key: 'STIPEND_SECURE_COOKIES', group: 'server' },
-  { key: 'STIPEND_DATA_FILE', group: 'storage' },
-  { key: 'STIPEND_BACKUP_DIR', group: 'storage' },
-  { key: 'STIPEND_BACKUP_KEEP', group: 'storage' },
+  { key: 'STIPEND_REQUIRE_APPROVAL', group: 'server' },
+  { key: 'DATABASE_URL', group: 'storage', secret: true, required: true },
+  { key: 'DATABASE_POOL_MAX', group: 'storage' },
+  { key: 'OIDC_ISSUER', group: 'sso' },
+  { key: 'OIDC_CLIENT_ID', group: 'sso' },
+  { key: 'OIDC_CLIENT_SECRET', group: 'sso', secret: true },
+  { key: 'OIDC_ADMIN_GROUP', group: 'sso' },
   { key: 'LOG_FORMAT', group: 'server' },
   { key: 'LOG_LEVEL', group: 'server' },
   { key: 'STIPEND_ADMIN_PASSWORD', group: 'accounts', secret: true },
@@ -56,7 +58,7 @@ const present = (value) => value !== undefined && value !== null && value !== ''
 function envValue(key, env) {
   const name = ENV_FALLBACK[key]
   if (!name || !present(env[name])) return undefined
-  return key === 'backupKeep' ? Number(env[name]) : env[name]
+  return env[name]
 }
 
 export function appSettings(state, env = {}) {
@@ -163,12 +165,6 @@ export function validateSettings(patch = {}) {
         out[key] = text(raw, 200, 'Sender')
         const address = /<([^>]+)>\s*$/.exec(out[key])?.[1] ?? out[key]
         if (!EMAIL.test(address)) throw invalid('Sender must be an address or "Name <address>".')
-        break
-      }
-      case 'backupKeep': {
-        const n = Number(raw)
-        if (!Number.isInteger(n) || n < 1 || n > 365) throw invalid('Backups to keep must be between 1 and 365.')
-        out[key] = n
         break
       }
     }

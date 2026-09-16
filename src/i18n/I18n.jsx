@@ -3,8 +3,20 @@ import { setFormatLocale } from '../lib/format.js'
 import { LOCALES, messages } from './messages.js'
 
 const KEY = 'stipend.lang'
-// Source-text catalogs for tx(), one file per language, loaded only when that language is active.
-const CATALOGS = import.meta.glob('./catalog/*.js')
+
+/**
+ * Source-text catalogs for tx(), one file per language, loaded only when that language is
+ * active.
+ *
+ * Looked up inside a function rather than at module scope. import.meta.glob is a Vite
+ * transform: at module scope it runs the moment this file is imported, so anything that
+ * imports useI18n — which is most of the component tree — could not be loaded outside Vite
+ * at all, including by the test runner. Vite resolves the glob statically in here just the
+ * same, and it only runs when a language is actually being loaded.
+ */
+function catalogLoaders() {
+  return import.meta.glob('./catalog/*.js')
+}
 const I18nContext = createContext(null)
 
 function readLang() {
@@ -33,7 +45,7 @@ export function I18nProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false
-    const load = CATALOGS[`./catalog/${lang}.js`]
+    const load = catalogLoaders()[`./catalog/${lang}.js`]
     if (!load) {
       setCatalog({})
       return undefined

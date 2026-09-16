@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '../../store.jsx'
 import { get, patch, post } from '../../api.js'
-import { formatDateTime } from '../../lib/format.js'
 import { ActionButton, ErrorText, KeyValues, OkText, Section, StatusBadge, useLoad } from '../../components/ui.jsx'
 import { COUNTRIES } from '../../data/agencies.js'
 import { useI18n } from '../../i18n/I18n.jsx'
@@ -14,12 +13,13 @@ const DURATIONS = [
   ['TRANSACTION', 'Per transaction'],
   ['FOREVER', 'Lifetime'],
 ]
-const ENV_KEYS = { publicUrl: 'PUBLIC_URL', cardProductId: 'LITHIC_PRODUCT_ID', mailFrom: 'MAIL_FROM', backupKeep: 'STIPEND_BACKUP_KEEP' }
+const ENV_KEYS = { publicUrl: 'PUBLIC_URL', cardProductId: 'LITHIC_PRODUCT_ID', mailFrom: 'MAIL_FROM' }
 const GROUPS = [
   ['lithic', 'Lithic'],
   ['email', 'Email'],
   ['server', 'Server'],
-  ['storage', 'Storage'],
+  ['storage', 'Database'],
+  ['sso', 'Single sign-on'],
   ['accounts', 'First-run logins'],
 ]
 const toEur = (cents) => (Number(cents || 0) / 100).toFixed(2)
@@ -313,37 +313,20 @@ function EmailSection({ settings, onSaved }) {
   )
 }
 
-function StorageSection({ settings, onSaved }) {
+/** Read-only: backups, failover and recovery belong to the database cluster now. */
+function StorageSection({ settings }) {
   const { tx } = useI18n()
-  const state = useSettingsForm(settings, ['backupKeep'], { numbers: ['backupKeep'] }, onSaved)
   const { storage } = settings
+  const megabytes = storage.sizeBytes ? `${(storage.sizeBytes / 1024 / 1024).toFixed(1)} MB` : '—'
   return (
-    <Section title={tx("Data and backups")} hint={tx("A backup is taken at start and once a day. Older backups beyond the limit are deleted.")}>
-      <form onSubmit={state.save}>
-        <ul className="endpoint-list">
-          <li>
-            <span className="muted">{tx("Database")}</span>
-            <code>{storage.dataFile}</code>
-          </li>
-        </ul>
-        <KeyValues
-          rows={[
-            [tx("Last backup"), storage.lastBackupAt ? formatDateTime(storage.lastBackupAt) : tx("never")],
-            [tx("Backups on disk"), storage.backups],
-          ]}
-        />
-        <div className="toolbar" style={{ alignItems: 'flex-end', marginTop: 14 }}>
-          <Field id="set-backups" label={tx("Backups to keep")} settings={settings} name="backupKeep">
-            <input id="set-backups" type="number" min={1} max={365} required value={state.form.backupKeep} onChange={state.set('backupKeep')} />
-          </Field>
-          <button className="btn" type="submit" style={{ marginBottom: 16 }}>{tx("Save")}</button>
-          <span style={{ marginBottom: 16 }}>
-            <ActionButton onClick={() => post('/api/admin/backups').then(onSaved)}>{tx("Back up now")}</ActionButton>
-          </span>
-        </div>
-        <OkText>{state.ok}</OkText>
-        <ErrorText error={state.error} />
-      </form>
+    <Section title={tx("Database")} hint={tx("Backups, failover and point-in-time recovery are managed by the database cluster, not by Stipend.")}>
+      <KeyValues
+        rows={[
+          [tx("Engine"), storage.serverVersion ? `PostgreSQL ${String(storage.serverVersion).split(' ')[0]}` : storage.engine],
+          [tx("Size"), megabytes],
+          [tx("Backups"), storage.backups],
+        ]}
+      />
     </Section>
   )
 }

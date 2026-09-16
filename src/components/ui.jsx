@@ -80,8 +80,8 @@ export function OkText({ children }) {
   )
 }
 
-const GOOD = new Set(['OPEN', 'ACTIVE', 'SETTLED', 'APPROVED', 'ACCEPTED', 'ACCP', 'CNCL', 'live', 'CASE_WON', 'CLOSED_WON', 'enrolled', 'yes'])
-const BAD = new Set(['DECLINED', 'CLOSED', 'REJECTED', 'RJCT', 'RJCR', 'paused', 'DEACTIVATED', 'CASE_CLOSED', 'error', 'RECALLED', 'no'])
+const GOOD = new Set(['OPEN', 'ACTIVE', 'SETTLED', 'APPROVED', 'APPLIED', 'ACCEPTED', 'ACCP', 'CNCL', 'live', 'CASE_WON', 'CLOSED_WON', 'enrolled', 'yes'])
+const BAD = new Set(['DECLINED', 'CLOSED', 'REJECTED', 'FAILED', 'EXPIRED', 'RJCT', 'RJCR', 'paused', 'DEACTIVATED', 'CASE_CLOSED', 'error', 'RECALLED', 'no'])
 
 export function StatusBadge({ status }) {
   if (!status) return <span className="badge">—</span>

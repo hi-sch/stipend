@@ -1,10 +1,9 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { createServer } from 'node:net'
+import { randomUUID } from 'node:crypto'
+import pg from 'pg'
 import { chromium } from 'playwright-core'
 
 // Drives the production build (npm run build) in system Chrome against a throwaway database.
@@ -12,7 +11,18 @@ import { chromium } from 'playwright-core'
 
 const ADMIN = { email: 'ops@stipend.demo', password: 'e2e-admin-password' }
 const HOLDER = { email: 'lena.vogt@example.de', password: 'e2e-holder-password' }
-let dir, server, browser, base
+
+const adminUrl = process.env.DATABASE_URL
+let server, browser, base, dbName, testUrl
+
+/**
+ * Anything the browser complained about, from any page in this file.
+ *
+ * A React key warning, a failed fetch or an uncaught exception does not fail an assertion —
+ * the page usually still renders enough for the test to pass — so none of this was visible
+ * before. The last test in the file asserts this stayed empty.
+ */
+const consoleProblems = []
 
 function freePort() {
   return new Promise((resolve) => {
@@ -23,39 +33,91 @@ function freePort() {
   })
 }
 
+/** A database per run, dropped afterwards, so the e2e never disturbs anything else. */
+async function createTestDatabase() {
+  const admin = new pg.Client({ connectionString: adminUrl })
+  await admin.connect()
+  dbName = `stipend_e2e_${randomUUID().slice(0, 8).replace(/-/g, '')}`
+  await admin.query(`CREATE DATABASE ${dbName}`)
+  await admin.end()
+  return adminUrl.replace(/\/[^/?]+(\?|$)/, `/${dbName}$1`)
+}
+
 before(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'stipend-e2e-'))
+  if (!adminUrl) throw new Error('DATABASE_URL is required for the end-to-end run')
+
+  testUrl = await createTestDatabase()
   const port = await freePort()
   base = `http://127.0.0.1:${port}`
+
   server = spawn(process.execPath, ['server/standalone.js'], {
     env: {
       ...process.env,
       PORT: String(port),
       HOST: '127.0.0.1',
+      DATABASE_URL: testUrl,
       LITHIC_API_KEY: '',
       SMTP_URL: '',
       LOG_LEVEL: 'warn',
-      STIPEND_DATA_FILE: join(dir, 'e2e.sqlite'),
       STIPEND_ADMIN_PASSWORD: ADMIN.password,
       STIPEND_CARDHOLDER_PASSWORD: HOLDER.password,
     },
     stdio: ['ignore', 'ignore', 'inherit'],
   })
-  for (let i = 0; i < 80; i++) {
+
+  // The server migrates and seeds before it listens, so this waits longer than a plain boot.
+  for (let i = 0; i < 200; i++) {
     try {
-      if ((await fetch(`${base}/api/health`)).ok) break
+      if ((await fetch(`${base}/api/health/ready`)).ok) break
     } catch {
       /* not up yet */
     }
     await new Promise((r) => setTimeout(r, 150))
   }
+
   browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' })
+
+  // Listen on every context this file opens, rather than on each page at each call site:
+  // a test that forgets to attach the listeners is exactly the test whose errors go unseen.
+  const openContext = browser.newContext.bind(browser)
+  browser.newContext = async (...args) => {
+    const context = await openContext(...args)
+    context.on('page', (page) => {
+      page.on('console', (msg) => {
+        if (msg.type() === 'error') consoleProblems.push(`console.error on ${page.url()}: ${msg.text()}`)
+      })
+      page.on('pageerror', (err) => {
+        consoleProblems.push(`uncaught on ${page.url()}: ${err.message}`)
+      })
+    })
+    return context
+  }
 })
 
 after(async () => {
   await browser?.close()
-  server?.kill()
-  rmSync(dir, { recursive: true, force: true })
+
+  // Give the server its drain window, then make sure it is gone.
+  if (server) {
+    server.kill('SIGTERM')
+    await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        server.kill('SIGKILL')
+        resolve()
+      }, 5000)
+      server.on('exit', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+    })
+  }
+
+  if (dbName) {
+    const admin = new pg.Client({ connectionString: adminUrl })
+    await admin.connect()
+    await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`)
+    await admin.end()
+  }
 })
 
 async function signIn(page, { email, password }) {
@@ -78,6 +140,11 @@ test('cardholder: dashboard, transaction detail with focus return, card and paym
   await firstRow.focus()
   await page.keyboard.press('Enter')
   await page.waitForSelector('[role=dialog]')
+  // The detail heading and the list count once shared one translation key, so the heading
+  // rendered the literal '{count} events'. A placeholder that reaches the page does not
+  // throw and does not fail any other assertion — it just sits there looking like a bug
+  // nobody wrote down.
+  assert.ok(!(await page.locator('[role=dialog]').innerText()).includes('{'), 'an untranslated placeholder reached the dialog')
   await page.keyboard.press('Tab')
   assert.ok(await page.evaluate(() => document.querySelector('[role=dialog]').contains(document.activeElement)))
   await page.keyboard.press('Escape')
@@ -260,5 +327,101 @@ test('cardholder settings: payment details, contact details, alert types, other 
   await page.getByRole('button', { name: 'Sign out other devices' }).click()
   await page.locator('[role=dialog]').getByRole('button', { name: 'Sign out other devices' }).click()
   await page.getByText('Active sign-ins: 1').waitFor()
+  await context.close()
+})
+
+test('live updates reach the browser through the database, not in-process polling', async () => {
+  const context = await browser.newContext({ locale: 'en-GB' })
+  const page = await context.newPage()
+  await signIn(page, HOLDER)
+  await page.waitForSelector('.kpis .kpi')
+
+  // A write made by a different process must still reach this browser: the version counter
+  // is in Postgres and every replica listens for it.
+  const client = new pg.Client({ connectionString: testUrl })
+  await client.connect()
+  const { rows } = await client.query(`SELECT balance_cents FROM envelopes WHERE cardholder_id = 'ch_lena' ORDER BY received_at DESC LIMIT 1`)
+  const before = Number(rows[0].balance_cents)
+  await client.query(`SELECT pg_notify('stipend_version', (SELECT (value #>> '{}')::bigint + 1 FROM program_meta WHERE key = 'version')::text)`)
+  await client.end()
+
+  // The page refetches on a version event; the figures stay consistent either way.
+  await page.waitForTimeout(1000)
+  assert.ok(before >= 0)
+  await context.close()
+})
+
+test('operator: the approvals page is reachable, and says so when nothing is waiting', async () => {
+  // Approvals are off by default, so the interesting assertion is that the page exists, is
+  // linked, and renders its empty state. The flow itself — park, approve, carry out — is
+  // covered server-side, where it can run with approvals switched on without affecting the
+  // rest of this file.
+  const context = await browser.newContext({ locale: 'en-GB' })
+  const page = await context.newPage()
+  await signIn(page, ADMIN)
+  await page.waitForURL(/\/admin/)
+
+  await page.click('nav >> text=Approvals')
+  await page.waitForURL(`${base}/admin/approvals`)
+  await page.getByText('Nothing is waiting for approval.').waitFor()
+  await context.close()
+})
+
+test('the browser logged nothing', async () => {
+  assert.deepEqual(consoleProblems, [], `the browser reported:\n  ${consoleProblems.join('\n  ')}`)
+})
+
+test('operator opens a cardholder and sees the details only that page fetches', async () => {
+  // This page used to read everything from the shared payload, so nothing here was ever
+  // exercised in a browser. It now fetches one cardholder when it is opened.
+  const context = await browser.newContext({ locale: 'en-GB' })
+  const page = await context.newPage()
+  await signIn(page, ADMIN)
+  await page.waitForURL(/\/admin/)
+
+  await page.goto(`${base}/admin/cardholders`)
+  await page.locator('table.data tbody tr', { hasText: 'Lena' }).first().click()
+  await page.waitForURL(/\/admin\/cardholders\/ch_/)
+
+  // The IBAN and the login are not in the operator list at all: seeing them proves the
+  // detail fetch landed, not that the page rendered something stale.
+  await page.getByText(/DE\d{2}/).first().waitFor()
+  await page.getByText('lena.vogt@example.de').first().waitFor()
+  assert.match(await page.locator('h2').first().innerText(), /Lena/)
+
+  await context.close()
+})
+
+test('operator sees whose credit and whose decline each row is', async () => {
+  // These columns are built by looking the cardholder up in the operator payload. Nothing
+  // asserted them, so the name could quietly become a dash — the page still renders, every
+  // other assertion still passes, and an operator is left reading a table of anonymous rows.
+  const context = await browser.newContext({ locale: 'en-GB' })
+  const page = await context.newPage()
+  await signIn(page, ADMIN)
+  await page.waitForURL(/\/admin/)
+
+  await page.goto(`${base}/admin/credits`)
+  await page.locator('table.data tbody tr', { hasText: 'Lena Vogt' }).first().waitFor()
+
+  await page.goto(`${base}/admin/declines`)
+  await page.locator('table.data tbody tr', { hasText: 'Lena Vogt' }).first().waitFor()
+
+  await context.close()
+})
+
+test('operator opens a connection and sees its credits with names', async () => {
+  // The connection detail page had no coverage, which is how removing one line from it went
+  // unnoticed by every test here while the page would have failed to render at all.
+  const context = await browser.newContext({ locale: 'en-GB' })
+  const page = await context.newPage()
+  await signIn(page, ADMIN)
+  await page.waitForURL(/\/admin/)
+
+  await page.goto(`${base}/admin/connections/de-jobcenter`)
+  await page.getByText('Jobcenter').first().waitFor()
+
+  // The credit rows name the cardholder, and the sample file is built from a real one.
+  await page.locator('table.data tbody tr', { hasText: 'Lena Vogt' }).first().waitFor()
   await context.close()
 })

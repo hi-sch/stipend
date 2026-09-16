@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useStore } from '../../store.jsx'
 import { get } from '../../api.js'
 import { eur, formatDateTime } from '../../lib/format.js'
-import { ActionButton, ErrorText, KeyValues, Section, SecretOnce, StatusBadge, JsonView } from '../../components/ui.jsx'
+import { ActionButton, ErrorText, KeyValues, Section, SecretOnce, StatusBadge, JsonView, useLoad } from '../../components/ui.jsx'
 import ConfirmDialog from '../../components/ConfirmDialog.jsx'
 import { useI18n } from '../../i18n/I18n.jsx'
 import { CASH_PER, useCashRuleLabel } from './Cardholders.jsx'
@@ -14,8 +14,7 @@ export default function CardholderDetail() {
   const { tx } = useI18n()
   const { id } = useParams()
   const navigate = useNavigate()
-  const { cardholders, allTransactions, act, selectCardholder, lithic, users } = useStore()
-  const person = cardholders.find((c) => c.id === id)
+  const { allTransactions, act, selectCardholder, lithic, version } = useStore()
   const [edit, setEdit] = useState(null)
   const [error, setError] = useState('')
   const [password, setPassword] = useState('')
@@ -24,16 +23,25 @@ export default function CardholderDetail() {
   const [limit, setLimit] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // This page is the only one that needs a whole cardholder, so it asks for one rather than
+  // every operator carrying every cardholder's phone number, IBAN and Lithic tokens in the
+  // shared payload. Keyed on the program version as well as the id: every write bumps it,
+  // which is what reloads this after issuing a card or deciding a cash request.
+  const detail = useLoad(() => get(`/api/admin/cardholders/${id}`), [id, version])
+  const person = detail.data
+
   if (!person) {
-    return (
+    return detail.loading ? (
+      <p className="empty">{tx("Loading…")}</p>
+    ) : (
       <p>{tx("Unknown cardholder.")}{' '}<Link to="/admin/cardholders">{tx("Back")}</Link>
       </p>
     )
   }
+  const login = person.login
   const card = person.card || {}
   const live = Boolean(card.token)
   const txns = allTransactions.filter((t) => t.cardholderId === person.id).slice(0, 15)
-  const login = (users || []).find((u) => u.cardholderId === person.id)
   const cardAction = (action, body = {}) => act('POST', `/api/admin/cardholders/${person.id}/card/${action}`, body)
 
   async function saveProfile(e) {
@@ -207,7 +215,10 @@ export default function CardholderDetail() {
           </tbody>
         </table>
       </Section>
-      {person.kycRaw && <JsonView value={person.kycRaw} />}
+      {/* What Lithic answered when Check was pressed. This read person.kycRaw, a field no
+          query has ever returned and no column has ever held, so the panel could not appear
+          at all. The stored kyc block is a summary; this is the reply behind it. */}
+      {kyc && <JsonView value={kyc} />}
       {confirmDelete && (
         <ConfirmDialog
           title={tx("Delete {0} {1}?", { 0: person.firstName, 1: person.lastName })}

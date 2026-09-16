@@ -25,7 +25,7 @@ export default function Asa() {
 
   return (
     <div className="page-stack">
-      <div className="grid-2">
+      <div className="grid-2 even">
         <Section title={tx("Auth Stream Access")} hint={tx("Lithic sends every authorization to Stipend, which picks the envelope, enforces daily caps and can partially approve. Responses must arrive within 6 seconds.")}>
           <KeyValues
             rows={[
@@ -120,7 +120,7 @@ function Responders() {
 
   return (
     <div className="stack">
-      <div className="grid-2">
+      <div className="grid-2 even">
         {RESPONDERS.map(([kind, title, hint]) => {
           const info = data.data?.[kind]
           const url = urls[kind] ?? `${publicOrigin}${info?.path || `/api/responders/${kind}`}`
@@ -150,6 +150,7 @@ function Responders() {
       <Section title={tx("Decisioning policy")}>
         <form
           className="toolbar"
+          style={{ display: 'flex', alignItems: 'flex-end' }}
           onSubmit={(e) => {
             e.preventDefault()
             run(() =>
@@ -172,7 +173,9 @@ function Responders() {
               <option value="authenticate">{tx("Always require verification")}</option>
             </select>
           </label>
-          <button className="btn" type="submit">{tx("Save policy")}</button>
+          <div style={{ padding: '3px 4px' }}>
+            <button className="btn" type="submit">{tx("Save policy")}</button>
+          </div>
         </form>
         <ErrorText error={error || data.error} />
         <table className="data" style={{ marginTop: 12 }}>

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: stipend
+description: Cardholder app and operator console for restricted social-security envelopes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - stipend
+  - lithic
+  - iso20022

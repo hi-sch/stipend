@@ -391,6 +391,10 @@ select {
   gap: 16px;
   margin-bottom: 16px;
 }
+/* A standalone card placed directly in the dashboard keeps the same rhythm as the grids
+   around it. Cards inside a grid are spaced by the grid gap, so this is scoped to direct
+   children and leaves them alone. */
+.dash > section.card { margin-bottom: 16px; }
 .grid-2.even { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .card {
   background: var(--surface);
@@ -928,6 +932,7 @@ table.data tbody tr.on { background: #f4f5f8; }
   border: 1px solid var(--line);
 }
 .btn.danger { background: var(--danger); }
+.btn.success { background: var(--ok); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .group {

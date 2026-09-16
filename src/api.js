@@ -6,6 +6,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A sensitive write was parked for a second operator rather than carried out.
+ *
+ * The server answers 202, which is a success status, so this used to resolve like any other
+ * call: the page refreshed, nothing had changed, and the operator was told nothing. Raising
+ * it means every gated action reports itself through the error path the buttons already
+ * have, without each page having to know about approvals.
+ */
+export class ApprovalRequiredError extends ApiError {
+  constructor(data) {
+    super(data.message || 'This change needs a second operator to approve it.', 202, data)
+    this.approvalId = data.approvalId
+    this.action = data.action
+  }
+}
+
 let actingCardholder = null
 
 /** Admins viewing the cardholder app act on this cardholder for /api/me calls. */
@@ -30,6 +46,9 @@ export async function api(method, path, body) {
     data = text ? JSON.parse(text) : null
   } catch {
     data = text
+  }
+  if (res.status === 202 && data && data.approvalRequired) {
+    throw new ApprovalRequiredError(data)
   }
   if (!res.ok) {
     throw new ApiError((data && data.error) || `Request failed (${res.status})`, res.status, data)

@@ -19,9 +19,26 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  * Minimal Lithic REST client. Requests run one at a time so sandbox rate limits
  * (and auth-rule draft/promote ordering) stay predictable.
  */
-export function createLithic({ apiKey, environment = 'sandbox', fetchImpl = fetch } = {}) {
+export function createLithic({ apiKey, environment = 'sandbox', fetchImpl = fetch, sleepImpl = sleep } = {}) {
   const origin = environment === 'production' ? PRODUCTION : SANDBOX
   let queue = Promise.resolve()
+
+  /**
+   * How long to wait after a 429.
+   *
+   * Retry-After may be a number of seconds or an HTTP date. Number() on a date is NaN, and
+   * Math.max(NaN, 1000) is NaN, which setTimeout treats as zero — so the date form turned
+   * the backoff into five immediate retries straight back into the rate limit.
+   */
+  function backoffMs(header) {
+    const seconds = Number(header)
+    if (Number.isFinite(seconds) && seconds > 0) return Math.max(seconds * 1000, 1000)
+
+    const date = header ? Date.parse(header) : NaN
+    if (Number.isFinite(date)) return Math.min(Math.max(date - Date.now(), 1000), 60_000)
+
+    return 1000
+  }
 
   async function once(method, path, body, { idempotencyKey } = {}) {
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -44,7 +61,7 @@ export function createLithic({ apiKey, environment = 'sandbox', fetchImpl = fetc
         data = { message: text }
       }
       if (res.status === 429) {
-        await sleep(Math.max(Number(res.headers.get('retry-after') || 1) * 1000, 1000))
+        await sleepImpl(backoffMs(res.headers.get('retry-after')))
         continue
       }
       if (!res.ok) throw new LithicError(data.message || data.error || `Lithic ${res.status}`, res.status, data)

@@ -1,0 +1,12 @@
+{
+  "//": "Not a TypeScript project. This exists so the test runner's JSX transform (tsx, via esbuild) uses the automatic runtime, the same one Vite uses — without it every component would need to import React.",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": false,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022"
+  },
+  "include": ["src", "server", "tests"]
+}

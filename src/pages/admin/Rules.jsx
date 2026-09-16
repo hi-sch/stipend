@@ -22,7 +22,7 @@ export default function Rules() {
         title={tx("Authorization rules")}
         hint={tx("Stipend keeps one MCC allowlist and one daily velocity rule per card in sync with funded envelopes. Program-level rules are listed too.")}
         actions={
-          <>
+          <div style={{ whiteSpace: 'nowrap', display: 'flex', gap: 8 }}>
             <select className="country-select" value={holderId} onChange={(e) => setHolderId(e.target.value)} aria-label={tx("Cardholder")}>
               <option value="">{tx("All rules")}</option>
               {cardholders.filter((c) => c.card?.token).map((c) => (
@@ -33,7 +33,7 @@ export default function Rules() {
             </select>
             {holderId && <ActionButton onClick={() => post(`/api/admin/cardholders/${holderId}/rules/sync`).then(rules.reload)}>{tx("Sync from envelopes")}</ActionButton>}
             <button className="btn ghost" type="button" onClick={rules.reload}>{tx("Refresh")}</button>
-          </>
+          </div>
         }
       >
         <ErrorText error={rules.error} />
@@ -70,7 +70,7 @@ export default function Rules() {
                       {r.type === 'CONDITIONAL_ACTION' && (
                         <button className="btn ghost" type="button" onClick={() => setPanel({ kind: 'backtest', rule: r })}>{tx("Backtest")}</button>
                       )}
-                      <ActionButton onClick={() => patch(`/api/admin/rules/${r.token}`, { state: r.state === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }).then(rules.reload)}>
+                      <ActionButton className={r.state === 'ACTIVE' ? 'btn danger' : 'btn success'} onClick={() => patch(`/api/admin/rules/${r.token}`, { state: r.state === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }).then(rules.reload)}>
                         {r.state === 'ACTIVE' ? 'Deactivate' : 'Activate'}
                       </ActionButton>
                     </div>

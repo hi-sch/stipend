@@ -10,15 +10,34 @@ It runs against the **Lithic sandbox** by default. Card data is shown through Li
 
 ## Run
 
-Requires Node.js 24 (for the built-in `node:sqlite`).
+Requires Node.js 24 and a PostgreSQL 16 or later database.
 
 ```bash
-cp .env.example .env   # set LITHIC_API_KEY (sandbox)
+cp .env.example .env   # set DATABASE_URL and LITHIC_API_KEY (sandbox)
 npm install
+npm run migrate        # apply the schema
 npm run dev            # http://127.0.0.1:5175
 ```
 
-On first start the server creates `server/data/stipend.sqlite` with demo data and prints two logins: an operator (`ops@stipend.demo`) and the demo cardholder. Set `STIPEND_ADMIN_PASSWORD` / `STIPEND_CARDHOLDER_PASSWORD` to choose them; generated passwords must be changed at first sign-in.
+A database for development, if you do not already have one:
+
+```bash
+docker run -d --name stipend-pg -p 5432:5432 \
+  -e POSTGRES_USER=stipend -e POSTGRES_PASSWORD=stipend -e POSTGRES_DB=stipend postgres:17
+# DATABASE_URL=postgres://stipend:stipend@127.0.0.1:5432/stipend
+```
+
+Worth setting on a development database too, because a connection the application loses track
+of can only be closed by the server, and a long-running dev server is where that was found:
+
+```sql
+ALTER DATABASE stipend SET idle_session_timeout = '10min';
+ALTER DATABASE stipend SET idle_in_transaction_session_timeout = '60s';
+```
+
+The chart sets both on the cluster it creates; see [DEPLOYMENT.md](DEPLOYMENT.md#troubleshooting).
+
+On first start the server migrates, seeds the demo program and prints two logins: an operator (`ops@stipend.demo`) and the demo cardholder. Set `STIPEND_ADMIN_PASSWORD` / `STIPEND_CARDHOLDER_PASSWORD` to choose them; generated passwords must be changed at first sign-in. Seeding is skipped when the database already holds a program, so a restart never writes demo data over real data.
 
 Then open **Admin → Settings** to set the program name, support contact and public URL, and check the server configuration table for anything missing.
 
@@ -30,11 +49,49 @@ npm start              # serves dist/ and the API
 ```
 
 ```bash
-npm test               # engine, cash rules, ISO 20022 (incl. XSD), storage, settings, responders and API tests
+npm test               # engine, cash rules, ISO 20022 (incl. XSD), ledger, reconciliation, audit, SSO, API, components and translations
 npm run test:e2e       # builds, starts the production server and drives Chrome through the main flows
+npm run lint           # correctness rules only: no formatter, no stylistic rewrites
 ```
 
+Both need `DATABASE_URL`. Tests that assert on program-wide state create and drop a database of their own per run, so they never disturb a database you are working in.
+
 End-to-end tests use the installed Google Chrome through `playwright-core` (set `CHROME_PATH` to use another Chromium).
+
+ESLint is held at 9 on purpose. `eslint-plugin-react` supplies `jsx-uses-vars`, without which everything used only inside JSX reads as an unused import — 267 false findings — and it does not support ESLint 10 yet. `npm outdated` will keep offering the upgrade; it is worth taking only once that plugin follows.
+
+## Deployment
+
+A container image and a Helm chart are in the repository. The full procedure — secrets, ingress, single sign-on, backups, upgrades, capacity and a troubleshooting list — is in **[DEPLOYMENT.md](DEPLOYMENT.md)**. What follows is the short version.
+
+The defaults install a working program with no ingress and no single sign-on. The only value
+without a default is the image; install fails with a clear message rather than trying to pull
+a placeholder.
+
+```bash
+docker build -t ghcr.io/your-org/stipend:0.1.0 .
+helm upgrade --install stipend deploy/helm/stipend \
+  --set image.repository=ghcr.io/your-org/stipend
+kubectl port-forward svc/stipend-stipend 5175:80    # until there is an ingress
+```
+
+Turn each piece on as the infrastructure for it exists:
+
+```bash
+--set ingress.enabled=true --set ingress.host=stipend.example.org   # also sets PUBLIC_URL
+--set publicUrl=https://stipend.example.org                         # if something else terminates TLS
+--set sso.enabled=true --set sso.issuer=https://auth.example.org/realms/stipend
+--set approvals.required=true                                       # needs two operator accounts
+--set costAllocation.enabled=true --set costAllocation.labels.cost-center=cc-4711
+--set postgres.backup.enabled=true --set postgres.backup.destinationPath=s3://bucket/stipend
+```
+
+- **Database.** The chart creates a [CloudNativePG](https://cloudnative-pg.io) cluster (three instances, synchronous replication, anti-affinity) and the application reads its connection string from the Secret the operator publishes. Point at an existing database instead with `postgres.external.enabled=true`. Continuous backup to object storage is off until you give it a destination and credentials; turn it on for anything holding real money movement.
+- **Migrations** run as an init container, behind a Postgres advisory lock, so a rollout with several replicas cannot apply the same migration twice.
+- **Probes.** Liveness is `/api/health/live` and does not touch the database, because restarting a pod does not fix a database outage. Readiness is `/api/health/ready` and does, so a pod that cannot reach Postgres leaves the Service instead of answering with errors.
+- **Shutdown.** SIGTERM stops new connections, lets in-flight authorizations finish, then closes the database.
+- **Cost allocation.** Every object carries `cost-center`, `owner` and `environment` labels, and the workload declares resource requests, so whatever the platform already uses for showback can attribute Stipend's spend. There is a memory limit but deliberately no CPU limit: throttling an authorizer that has to answer inside the ASA deadline turns a busy moment into declined card payments.
+- **Secrets** are referenced, never held in the chart. Create them with whatever you already run (sealed-secrets, external-secrets, SOPS).
 
 ## Features
 
@@ -55,6 +112,7 @@ End-to-end tests use the installed Google Chrome through `playwright-core` (set 
 - **Connections.** Paying agencies with protocol, MCC allowlist, country allowlist, daily cap, whether cash is allowed, hook URLs, HMAC secret, samples and file upload.
 - **Credits.** Credit log with `pain.002` reports and recalls.
 - **Cardholders.** Create, issue cards, open the app as a cardholder, and add cardholders to cash rules one by one or in bulk; manage cash rules.
+- **Approvals.** What is waiting for a second operator, what it will change and who asked for it; approve or reject with a note, then carry it out. Empty unless two-operator approval is on.
 - **Declines, Auth rules, ASA and responders, Integrations (Lithic events), Ledger, Cases, Sandbox tools, Audit log.**
 - **Settings** (header link). Personal preferences and program configuration, see [Configuration](#configuration).
 
@@ -74,20 +132,24 @@ Two places:
 | Default daily cap | New connections | — |
 | Card spend limit and period, physical card product id | Newly issued cards | `LITHIC_PRODUCT_ID` |
 | Email sender, test email | Notification emails | `MAIL_FROM` |
-| Backups to keep | Daily database backups | `STIPEND_BACKUP_KEEP` |
 
 3DS challenge threshold and tokenization policy are set on the ASA and responders page.
 
 ## How it works
 
-- **Server is the source of truth.** A small Node API (mounted into Vite in development, `server/standalone.js` in production) owns state, pushes changes to browsers over Server-Sent Events, and is the only place the Lithic key is used.
+- **Server is the source of truth.** A small Node API (mounted into Vite in development, `server/standalone.js` in production) owns state, pushes changes to browsers over Server-Sent Events, and is the only place the Lithic key is used. One payload backs every page, so what it carries is deliberate: rows name the cardholder they belong to rather than being joined against a directory in the browser, the operator list holds only the fields the lists show, and a page that needs a whole cardholder asks for one. A convenient field added back here is sent to every operator on every update, for every cardholder in the program.
 - **Envelope engine** (`src/lib/auth.js`, `server/domain.js`). Picks the most specific funded envelope that can pay, applies per-connection daily caps, partially approves on capable terminals, and books holds, clearings, reversals, expiries and refunds as idempotent deltas.
 - **Lithic** (`server/lithicService.js`). Account holders (KYC_BYO), virtual and physical cards, card-level MCC allowlist and velocity rules kept in sync with funded envelopes, program- and account-level cash rules, ASA, Events API, disputes, tokenizations, 3DS and ledger.
-- **Storage.** SQLite (built-in `node:sqlite`, WAL mode). Application state is written in `BEGIN IMMEDIATE` transactions, so several server processes can share one database file; SSE clients on every process refresh within a second. A backup is taken with `VACUUM INTO` at start and daily. An existing `server/data/stipend.json` is migrated automatically.
+- **Storage.** PostgreSQL. Each entity is a table with real constraints, so the rules that matter are enforced by the database and not only by the code: a replayed `pain.001` is rejected by a unique index on `(connection_id, end_to_end_id)`, an envelope is unique per cardholder and connection, and one transaction can have only one open dispute. An authorization locks just that cardholder's envelopes with `SELECT … FOR UPDATE`, so purchases on different cards do not queue behind each other. Migrations in `server/migrations/` are applied in order under an advisory lock, so several replicas starting at once cannot race. Backups belong to the database (CloudNativePG takes base backups and streams WAL) rather than to the application.
+- **Double-entry ledger.** Every movement of value — credits, spend, refunds, recalls, operator allocations — is a balanced journal entry, and a deferred constraint refuses an entry that does not balance at commit. Envelope balances are a projection of that journal, not the record itself, which is what makes a drifted balance detectable instead of invisible. Postings are idempotent: replaying an ASA decision or a Lithic sync recomputes the same key and is skipped rather than doubling the money.
+- **Live updates.** A version counter in Postgres is bumped inside the writing transaction and announced with `NOTIFY`; every replica listens and forwards it to its own SSE clients, so a write on one pod reaches a browser connected to another. A rolled-back write announces nothing.
 - **Sessions.** scrypt-hashed passwords, HttpOnly SameSite=Strict cookies, login rate limiting, same-origin checks on every write. Cardholders only see their own data; operators see everything and can open the cardholder app as any cardholder. Changing a password or choosing "sign out other devices" ends all other sessions.
-- **Audit log.** Every operator write, sign-in, failed sign-in and cardholder profile change is recorded with actor, target, outcome and IP (secrets and uploads redacted).
+- **Audit log.** Every operator write, sign-in, failed sign-in and cardholder profile change is recorded with actor, target, outcome and IP (secrets and uploads redacted). Each entry carries the hash of the entry before it, and the table refuses `UPDATE` and `DELETE` outright, so an edited, deleted or reordered row is detectable. `GET /api/admin/audit/verify` walks the chain and names the first entry that does not verify.
+- **Reconciliation.** On a schedule and on demand, Stipend asks two questions: does it agree with itself (every envelope balance against the journal), and does it agree with Lithic (transactions in both directions, with amounts and statuses). Differences become breaks an operator resolves or accepts, with who decided and why. Nothing is repaired automatically — money that disagrees is a decision, not a cleanup.
+- **Two-operator approval.** Optional (`STIPEND_REQUIRE_APPROVAL=1`). Cash rule changes, recalls, cardholder deletion, external payments and settings changes are parked until a second operator approves them. A request cannot be approved by the operator who made it — enforced in the route layer and again by a database constraint — so leave it off for a program with a single operator account.
+- **Rate limiting.** Sign-in is limited per account and per source address, so neither a brute force against one account nor a spray across many runs unthrottled. The endpoints that accept unauthenticated requests — ASA, the agency hooks, Lithic webhooks and the responders — each carry a flood ceiling, checked before the request body is read. These are ceilings, not quotas: every one of those endpoints verifies an HMAC signature before doing any work, and the limits sit far above real traffic because they are held per replica. Set `STIPEND_TRUST_PROXY=1` behind a proxy or ingress, or every request will appear to come from the same address and the per-source limits will not distinguish clients.
 - **Email.** Notifications go to an outbox and are delivered over SMTP with retries and backoff; without SMTP they stay queued. Cardholders choose which alert types they receive.
-- **Operations.** `GET /api/health` reports database, Lithic and XSD validator status. Logs are JSON lines with a request id (`X-Request-Id`); `LOG_FORMAT=pretty` for local reading.
+- **Operations.** `GET /api/health` reports database, Lithic and XSD validator status, and how many connections this process is holding — `held` growing with an `oldestMs` in the hours is a connection nobody gave back, which the pool's own totals cannot show. Logs are JSON lines with a request id (`X-Request-Id`); `LOG_FORMAT=pretty` for local reading.
 
 ## Cash rules
 
@@ -131,11 +193,17 @@ Cards (create, update, spend limits, convert to physical, reissue, renew), embed
 
 | Path | Contents |
 |---|---|
-| `server/` | API (`app.js`), business rules (`domain.js`), Lithic integration (`lithicService.js`, `responders.js`, `ledgerRoutes.js`), storage (`db.js`), settings, email, logging, ISO 20022 schemas (`xsd/`) and unit tests |
+| `server/` | API (`app.js`), the cardholder's own routes (`cardholderRoutes.js`), business rules (`domain.js`), Lithic integration (`lithicService.js`, `responders.js`, `ledgerRoutes.js`), settings, email, logging, ISO 20022 schemas (`xsd/`) and unit tests |
+| `server/db/` | Storage: pool and transactions, repositories, double-entry ledger, audit chain, sessions, approvals, reconciliation, secret encryption, migrations runner |
+| `server/migrations/` | Schema, applied in order under an advisory lock |
+| `deploy/helm/stipend/` | Chart: Deployment, Service, Ingress, CloudNativePG cluster |
 | `src/pages/`, `src/pages/admin/` | Cardholder app and operator console |
 | `src/lib/` | Shared rules: envelope authorization, cash categories, alert types, ISO 20022 builders and parsers |
 | `src/i18n/` | Messages and translation catalogs |
+| `src/components/` | Shared interface pieces, with their tests beside them |
 | `tests/e2e/` | Browser tests |
+| `deploy/restore-drill.sh` | Dumps a database, restores it into a fresh one and compares every row count |
+| `eslint.config.js`, `tsconfig.json` | Correctness-only lint rules, and the JSX transform the test runner uses |
 
 ## Licence
 

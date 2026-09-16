@@ -16,7 +16,7 @@ const RECALL_REASONS = [
 
 export default function Credits() {
   const { tx } = useI18n()
-  const { allCredits, connections, cardholders, country, reports, act } = useStore()
+  const { allCredits, connections, country, reports, act } = useStore()
   const scopedIds = new Set(connections.filter((c) => c.country === country).map((c) => c.id))
   const rows = allCredits.filter((c) => scopedIds.has(c.connectionId))
   const [recalling, setRecalling] = useState(null)
@@ -45,14 +45,13 @@ export default function Credits() {
             <tbody>
               {rows.map((c) => {
                 const conn = connections.find((x) => x.id === c.connectionId)
-                const holder = cardholders.find((x) => x.id === c.cardholderId)
                 return (
                   <tr key={c.id}>
                     <td>
                       <Link to={`/admin/connections/${c.connectionId}`}>{conn?.name}</Link>
                       <div className="muted" style={{ fontSize: '0.78rem' }}>{PROTOCOLS.find((p) => p.id === c.protocol)?.label || c.protocol}</div>
                     </td>
-                    <td>{holder ? <Link to={`/admin/cardholders/${holder.id}`}>{`${holder.firstName} ${holder.lastName}`}</Link> : '—'}</td>
+                    <td>{c.cardholderName ? <Link to={`/admin/cardholders/${c.cardholderId}`}>{c.cardholderName}</Link> : '—'}</td>
                     <td>
                       <code>{c.endToEndId}</code>
                     </td>

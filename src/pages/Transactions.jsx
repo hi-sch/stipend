@@ -20,7 +20,7 @@ export default function Transactions() {
   return (
     <div className="card">
       <div className="card-head">
-        <h2>{t('txn.events', { count: rows.length })}</h2>
+        <h2>{t('txn.eventCount', { count: rows.length })}</h2>
         <div className="toolbar">
           <label className="search">
             <span className="muted">{t('common.search')}</span>

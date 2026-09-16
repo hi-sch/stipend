@@ -55,15 +55,47 @@ export function createSessions({ ttlMs = SESSION_TTL_MS } = {}) {
   }
 }
 
-export function createRateLimiter({ windowMs = 60_000, max = 5 } = {}) {
+/**
+ * A sliding-window limiter, per process.
+ *
+ * Two things it is not, both of which the callers are written around.
+ *
+ * It is per replica: a deployment of N pods allows N times `max`. The limits set against it
+ * are flood ceilings chosen with that in mind, not exact quotas. A quota that has to hold
+ * across replicas belongs in the database.
+ *
+ * And it keeps nothing beyond the current window. Entries used to accumulate for the life
+ * of the process: the login key is `ip|email`, both attacker-chosen, so anyone willing to
+ * name a fresh address could grow the map without bound. Keys whose last hit has aged out
+ * are now swept, and the map refuses to grow past `maxKeys`.
+ */
+export function createRateLimiter({ windowMs = 60_000, max = 5, maxKeys = 50_000 } = {}) {
   const hits = new Map()
+  let nextSweep = 0
+
   return {
     allow(key) {
       const now = Date.now()
+
+      if (now >= nextSweep) {
+        for (const [tracked, times] of hits) if (now - times[times.length - 1] >= windowMs) hits.delete(tracked)
+        nextSweep = now + windowMs
+      }
+
+      // At the ceiling, refuse a key we are not already tracking rather than grow. Keys
+      // inside the window keep their counts, so a flood of invented keys can neither
+      // exhaust memory nor evict the record of a brute force already in progress.
+      if (!hits.has(key) && hits.size >= maxKeys) return false
+
       const recent = (hits.get(key) || []).filter((t) => now - t < windowMs)
       recent.push(now)
       hits.set(key, recent)
       return recent.length <= max
+    },
+
+    /** Keys currently tracked. For tests, and for reporting the map is not growing. */
+    get size() {
+      return hits.size
     },
   }
 }

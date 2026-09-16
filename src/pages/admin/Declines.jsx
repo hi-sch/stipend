@@ -8,7 +8,7 @@ import { useI18n } from '../../i18n/I18n.jsx'
 
 export default function Declines() {
   const { tx } = useI18n()
-  const { allTransactions, cardholders } = useStore()
+  const { allTransactions } = useStore()
   const rows = allTransactions.filter((t) => t.status === 'DECLINED')
   const [results, setResults] = useState(null)
 
@@ -31,14 +31,13 @@ export default function Declines() {
           </thead>
           <tbody>
             {rows.map((t) => {
-              const holder = cardholders.find((c) => c.id === t.cardholderId)
               return (
                 <tr key={t.id}>
                   <td>
                     {t.merchant?.descriptor}
                     {t.note && <div className="muted" style={{ fontSize: '0.8rem' }}>{t.note}</div>}
                   </td>
-                  <td>{holder ? `${holder.firstName} ${holder.lastName}` : '—'}</td>
+                  <td>{t.cardholderName || '—'}</td>
                   <td>
                     {t.merchant?.mcc} {mccName(t.merchant?.mcc)}
                   </td>
